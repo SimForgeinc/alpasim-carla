@@ -1,4 +1,6 @@
-# alpasim-carla
+<p align="center">
+  <img src="docs/assets/banner.png" alt="AlpasimCarla — open-source CARLA renderer for NVIDIA AlpaSim" width="100%">
+</p>
 
 A CARLA-backed renderer for [NVIDIA AlpaSim](https://github.com/NVIDIA/alpasim).
 It implements AlpaSim's `SensorsimService` gRPC contract, so an AlpaSim driver
