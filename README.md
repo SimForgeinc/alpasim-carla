@@ -12,22 +12,174 @@ with CARLA in Docker (`-RenderOffScreen`). License: Apache-2.0.
 
 ## How it works
 
-AlpaSim's runtime owns all world state. Each tick it sends the renderer a
-`render_rgb` request containing the pose of every object (`dynamic_objects`),
-the camera pose and intrinsics, and a time window. The bridge teleports CARLA
-actors to exactly those poses (physics and autopilot off), places the camera,
-ticks the simulator once, captures the frame, and returns encoded image bytes.
-CARLA never simulates motion — it only renders the state AlpaSim dictates.
+If you already know AlpaSim, the one-line summary: this is an out-of-process
+`SensorsimService` implementation; AlpaSim dictates every pose, CARLA renders
+them. If you don't, read on — this section assumes no prior knowledge of
+protobuf, AlpaSim, or CARLA internals.
+
+### Protobuf and gRPC in one paragraph
+
+A `.proto` file declares typed messages (fields, types, numbers) and services
+(named remote calls with request/response message types). `protoc` compiles it
+into Python classes that serialize to a compact wire format; gRPC then serves
+those calls over HTTP/2 so a client in one process can call a server in
+another — across languages or, as here, across Python versions. The `.proto`
+files are the entire contract. AlpaSim's renderer contract is
+`SensorsimService` (8 RPCs, vendored under `proto/alpasim_grpc/v0/`); this
+library is a server that fulfills it.
+
+### The full picture
+
+AlpaSim is not one program — it is a set of services, each its own
+process/container, composed and launched by `alpasim_wizard` (a Hydra CLI).
+Every arrow below is a gRPC call.
 
 ```
-AlpaSim runtime ──render_rgb──▶ alpasim-carla ──tick/capture──▶ CARLA server
-      ▲                              (3.10 process)              (any reachable
-      └── frames ── driver policy                                 0.9.16 server)
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                           AlpaSim  (Python 3.12)                             │
+│                                                                              │
+│                      ┌─────────────────────────────────┐                     │
+│                      │             RUNTIME             │                     │
+│                      │  the single owner of the world: │                     │
+│                      │  • simulation clock (µs)        │                     │
+│                      │  • ego pose history             │                     │
+│                      │  • traffic trajectories         │                     │
+│                      │  • camera trigger schedule      │                     │
+│                      │  • logs everything to .asl      │                     │
+│                      └──┬─────────┬─────────┬───────┬──┘                     │
+│        render_rgb       │         │         │       │                        │
+│        get_available_*  │  drive()│  run_controller_ │ simulate()            │
+│        get_version      │         │  and_vehicle()   │                       │
+│            │            │         ▼         ▼        ▼                       │
+│            │            │  ┌───────────┐ ┌─────────────┐ ┌────────────┐      │
+│            │            │  │  DRIVER   │ │ CONTROLLER  │ │ TRAFFICSIM │      │
+│            │            │  │ the policy│ │ MPC tracker │ │ simulates  │      │
+│            │            │  │ (Alpamayo,│ │ + vehicle   │ │ or replays │      │
+│            │            │  │ Transfuser│ │ dynamics    │ │ traffic    │      │
+│            │            │  │ …) on GPU │ │ model       │ │ (optional) │      │
+│            │            │  └───────────┘ └─────────────┘ └────────────┘      │
+│            │            │                                                    │
+│            │            │  PHYSICS service (terrain-height queries) exists   │
+│            │            │  too, but it loads NVIDIA per-scene artifacts, so  │
+│            │            │  CARLA runs skip it (flat-ground assumption).      │
+└────────────┼────────────┼────────────────────────────────────────────────────┘
+             │ gRPC: SensorsimService on :50051
+             ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                    alpasim-carla bridge  (Python 3.10)                       │
+│                                                                              │
+│  the render_rgb pipeline, in order:                                          │
+│   1. server.py    validate request; explicit errors only (unknown scene →    │
+│                   NOT_FOUND with the available list, unsupported camera →    │
+│                   INVALID_ARGUMENT naming the field)                         │
+│   2. scenes.py    scene_id → manifest: which CARLA map, the camera rig,      │
+│                   the actor table (labels + bbox dims), the world anchor     │
+│   3. registry.py  diff request.dynamic_objects against live CARLA actors:    │
+│                     unseen track_id → spawn   (blueprint from label + dims)  │
+│                     known  track_id → set_transform (teleport)               │
+│                     absent track_id → destroy                                │
+│   4. cameras.py   CameraSpec → CARLA pinhole FOV (ftheta/fisheye only with   │
+│                   the explicit --allow-pinhole-approximation flag)           │
+│   5. frames.py    convert every pose: ENU right-handed → Unreal left-handed, │
+│                   optical camera axes → UE camera axes, bbox-center →        │
+│                   actor-pivot offset                                         │
+│   6. world.py     place the pooled RGB sensor → world.tick() once → take     │
+│                   the frame with that tick's id → encode JPEG/PNG            │
+└────────────┬─────────────────────────────────────────────────────────────────┘
+             │ CARLA client API (the 0.9.16 wheel matching your server build)
+             ▼
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                    CARLA 0.9.16 server  (Unreal Engine)                      │
+│  synchronous mode, fixed weather/seed; physics & autopilot OFF for every     │
+│  bridge-managed actor. CARLA renders exactly the state AlpaSim dictated —    │
+│  it never simulates object motion itself. Two owners of state = divergence. │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
 
-The two-Python split is structural: AlpaSim requires 3.12, the CARLA client
-wheel requires 3.10. The gRPC boundary means the bridge just runs as its own
-3.10 process.
+The mental model for the CARLA side: **AlpaSim moves the puppets, CARLA takes
+the photo.** The bridge's only memory between calls is the track-id registry
+in step 3.
+
+### One control step, end to end
+
+At the default 10 Hz control rate, every 100 ms of simulated time looks like
+this (4 cameras for the Alpamayo drivers):
+
+```
+ RUNTIME                BRIDGE + CARLA              DRIVER            CONTROLLER
+    │
+    │ interpolate ego + traffic poses at the camera trigger window
+    │
+    │ render_rgb(cam 1) ──▶ sync actors, place
+    │ render_rgb(cam 2) ──▶ camera, tick once,
+    │ render_rgb(cam 3) ──▶ capture, encode
+    │ render_rgb(cam 4) ──▶
+    │ ◀── image_bytes ×4 ──
+    │
+    │ submit images + ego-motion history ─────▶ policy forward
+    │ ◀──────── planned trajectory ─────────── pass (GPU)
+    │
+    │ run_controller_and_vehicle(plan) ──────────────────────────▶ MPC tracks
+    │ ◀──────────── new ego pose ──────────────────────────────── the plan,
+    │                                                             vehicle model
+    │ advance clock, append to .asl, repeat                       integrates
+```
+
+Note what the bridge does *not* do: it never integrates motion, never decides
+where anything is, never advances time. Each `render_rgb` request is complete
+and self-describing — object poses, camera pose, intrinsics, time window,
+output format.
+
+### Session startup
+
+Before the loop starts, the runtime probes the renderer:
+
+1. `get_version` — must report the pinned contract version
+   (`grpc_api_version` = `alpasim_grpc` 0.54.0).
+2. `get_available_scenes` — the configured `scene_id` must be in the returned
+   list (or the renderer may advertise the `"*"` wildcard).
+3. `get_available_cameras(scene_id)` — the rig the bridge serves from the
+   scene manifest. This is authoritative: AlpaSim's camera config can *modify*
+   cameras the renderer reports but cannot *add* ones, so the manifest must
+   cover every logical id the driver uses.
+4. `get_available_ego_masks` — v0.1 publishes none, which makes the runtime
+   disable ego-hood masking; `get_available_trajectories` is never called by
+   the runtime at the pinned commit.
+
+Scene data is split deliberately: the **runtime** seeds the session (ego start
+pose, route, ground-truth trajectory for scoring) from AlpaSim's own scene
+catalog, while the **bridge** only needs its manifest to know what world to
+show for that `scene_id` — which CARLA town, where to anchor the recorded
+local frame in it, and what each track id looks like.
+
+### Coordinate systems
+
+Every pose crossing the boundary goes through `frames.py` (pure functions,
+golden-tested):
+
+| Frame | Convention | Used for |
+|---|---|---|
+| AlpaSim `local` | right-handed ENU, z-up, meters | all request poses |
+| AlpaSim `rig` / `aabb` | x-forward, y-left, z-up; `aabb` origin = bbox center | object poses (`aabb`), camera mounts (`rig`) |
+| AlpaSim camera | CV optical: x-right, y-down, z-forward | `sensor_pose` |
+| Unreal / CARLA | left-handed, x-forward, y-right, z-up, degrees | everything CARLA-side |
+
+The handedness bridge is `(x, y, z) → (x, −y, z)` for positions and direction
+vectors; rotations are transported by mapping the body's forward/right/up axes
+and reassembling the CARLA rotator, which keeps the math transparent and
+testable. Quaternions are `(w, x, y, z)`, active transforms, standard SE(3)
+composition. One subtlety worth knowing: a CARLA actor's transform places its
+*pivot*, but AlpaSim object poses give the *bounding-box center* — the
+registry compensates per blueprint using `actor.bounding_box.location`.
+
+### Why two Pythons
+
+AlpaSim requires Python 3.12; the CARLA client wheel requires 3.10. Because
+the boundary is gRPC, the bridge simply runs as its own 3.10 process. The only
+thing installed into AlpaSim's environment is `alpasim-carla-configs` — pure
+YAML registering an `alpasim.configs` entry point so `renderer=carla` works as
+a wizard flag, wiring the runtime to the bridge's address via
+`wizard.external_services.renderer`.
 
 ## Components
 
