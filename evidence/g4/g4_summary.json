@@ -1,0 +1,26 @@
+{
+  "run_dir": "g4run",
+  "checks": {
+    "ego_pose_count": 199,
+    "render_requests_logged": 792,
+    "video_frames": 198,
+    "ego_displacement_m": 34.61,
+    "ego_path_length_m": 34.62
+  },
+  "failures": [],
+  "rollout_asl": [
+    "g4run/rollouts/clipgt-01d503d4-449b-46fc-8d78-9085e70d3554/666ac222-6475-11f1-8ee4-6791d45cc8a5/rollout.asl"
+  ],
+  "scorer_outputs": [
+    "g4run/aggregate/metrics_results.parquet",
+    "g4run/aggregate/metrics_results.png",
+    "g4run/aggregate/metrics_results.txt",
+    "g4run/aggregate/metrics_unprocessed.parquet",
+    "g4run/metrics_plot.png",
+    "g4run/rollouts/clipgt-01d503d4-449b-46fc-8d78-9085e70d3554/666ac222-6475-11f1-8ee4-6791d45cc8a5/metrics.parquet",
+    "g4run/telemetry/metrics.prom",
+    "g4run/telemetry/metrics_worker_0.prom"
+  ],
+  "video": "g4out/g3_front_wide.mp4",
+  "passed": true
+}

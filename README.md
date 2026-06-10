@@ -100,16 +100,26 @@ pip install alpasim-carla-configs        # or: pip install -e configs_pkg/
        --allow-pinhole-approximation
    ```
 
-3. **Run AlpaSim against it** (AlpaSim checkout, Python 3.12 env with
-   `alpasim-carla-configs` installed):
+3. **Run AlpaSim against it** (from your AlpaSim checkout; either install
+   `alpasim-carla-configs` into AlpaSim's Python 3.12 env, or pass our config
+   dir explicitly with Hydra's `--config-dir` as below):
 
    ```bash
-   uv run alpasim_wizard deploy=local topology=1gpu driver=alpamayo1 \
-       renderer=carla 'wizard.external_services.renderer=["127.0.0.1:50051"]' \
+   uv run alpasim_wizard \
+       --config-dir /path/to/alpasim-carla/configs_pkg/alpasim_carla_configs/configs \
+       deploy=local topology=1gpu driver=alpamayo1_5 renderer=carla \
+       'wizard.external_services.renderer=["<your-host-ip>:50051"]' \
+       wizard.run_method=NONE wizard.log_dir=./out \
        runtime.endpoints.physics.skip=true \
        runtime.simulation_config.physics_update_mode=NONE \
-       wizard.log_dir=./out
+       runtime.simulation_config.n_rollouts=1
+   cd ./out && docker compose -f docker-compose.yaml \
+       up --no-build --exit-code-from runtime-0 --remove-orphans
    ```
+
+   (`wizard.run_method=NONE` generates the compose file without running it,
+   which keeps GPU/port assignment reviewable; drop it to let the wizard
+   launch compose itself.)
 
 The exact end-to-end commands used to validate this repo (with artifacts)
 live in `PLAN.md` §4 and `evidence/`.

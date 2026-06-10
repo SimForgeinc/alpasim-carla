@@ -21,8 +21,11 @@ the documented assumption, never a silent guess.
 
 3. **Does the alpamayo driver rectify with runtime-passed intrinsics or its
    own baked calibration?** Affects how much the pinhole approximation hurts
-   the policy. Resolved empirically at G3 (gate only requires the policy to
-   actually drive).
+   the policy. *Empirical G3 result (2026-06-10): with the recorded ftheta
+   rig approximated as pinhole, alpamayo1_5 drove 61.9 m lane-aligned over a
+   20 s rollout in Town10 — the approximation is policy-usable. How much
+   driving quality it costs versus true ftheta rendering remains unmeasured
+   (roadmap: distortion post-warp).*
 
 4. **`AvailableCamera.rig_to_camera` field naming.** The proto comment warns
    the field "should be camera_to_rig". The runtime composes
