@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alpasim-carla"
+version = "0.1.0"
+description = "CARLA-backed renderer (SensorsimService) for NVIDIA AlpaSim: point AlpaSim's runtime at this bridge and any AlpaSim driver policy drives closed-loop inside CARLA worlds."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+authors = [{ name = "SimForge" }]
+# CARLA 0.9.16 ships CPython 3.10 client wheels; AlpaSim itself needs 3.12.
+# The gRPC boundary means this bridge runs as its own 3.10 process, so the
+# two never share an environment.
+requires-python = ">=3.10,<3.11"
+dependencies = [
+    "grpcio>=1.60",
+    "protobuf>=4.25,<5", # matches the alpasim_grpc pin at alpasim commit a1f05bb
+    "numpy>=1.23",
+    "pillow>=10",
+    "pyyaml>=6",
+]
+
+[project.optional-dependencies]
+# Kept optional so the simulator-free test suite (gate G1) installs and runs
+# in environments without the CARLA client wheel.
+carla = ["carla==0.9.16"]
+dev = ["pytest>=7", "grpcio-tools==1.62.3"]
+
+[project.scripts]
+alpasim-carla = "alpasim_carla.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "carla: requires a reachable CARLA server (excluded from the simulator-free suite)",
+]

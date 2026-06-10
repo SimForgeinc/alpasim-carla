@@ -1,0 +1,30 @@
+# @package _global_
+# Renderer override: use an EXTERNAL alpasim-carla bridge as the sensorsim
+# renderer. The bridge is its own Python 3.10 process (CARLA client wheel
+# constraint); start it first, e.g.:
+#
+#   alpasim-carla serve --port 50051 --scenes-dir scenes/examples \
+#       --carla-host 127.0.0.1 --carla-port 3000 --allow-pinhole-approximation
+#
+# then run the wizard with this flag plus the bridge address:
+#
+#   uv run alpasim_wizard deploy=local topology=1gpu driver=alpamayo1 \
+#       renderer=carla 'wizard.external_services.renderer=["127.0.0.1:50051"]' \
+#       wizard.log_dir=./out ...
+#
+# Modeled on AlpaSim's own deploy/external_video_model.yaml pattern
+# (wizard.external_services is a dict[service_name, list[address]]).
+
+wizard:
+  debug_flags:
+    use_localhost: true
+
+  # Everything except the renderer still runs as wizard-managed services.
+  run_sim_services: ["driver", "physics", "trafficsim", "controller", "runtime"]
+
+  external_services:
+    renderer: ???
+
+runtime:
+  renderer:
+    kind: sensorsim

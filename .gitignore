@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.venv*/
+.pytest_cache/
+.uv/
+*.log
+# Large gate artifacts stay out of git; JSON reports and contact sheets are committed.
+evidence/**/frames/
+evidence/**/*.mp4
+evidence/g3/run/
