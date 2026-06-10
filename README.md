@@ -1,98 +1,80 @@
 # alpasim-carla
 
-**An open-source CARLA renderer for NVIDIA AlpaSim.** Point this bridge at
-your CARLA server, point AlpaSim's config at the bridge, and any AlpaSim
-driver policy (Alpamayo 1.5, Transfuser, your own) drives closed-loop inside
-CARLA worlds — with AlpaSim's runtime, controller, physics, and scorers
-unchanged.
+A CARLA-backed renderer for [NVIDIA AlpaSim](https://github.com/NVIDIA/alpasim).
+It implements AlpaSim's `SensorsimService` gRPC contract, so an AlpaSim driver
+policy (Alpamayo 1.5, Transfuser, your own) can drive closed-loop in CARLA
+worlds without any changes to AlpaSim's runtime, controller, physics, or
+scorers.
 
-Pinned and tested against: AlpaSim commit
-`a1f05bb628f3d1d19d79d44188e836e9108f98c6` (proto v0, `alpasim_grpc` 0.54.0)
-· CARLA **0.9.16** · bridge Python **3.10.x** · NVIDIA A100, driver 5xx,
-CARLA in docker with `-RenderOffScreen`. License: Apache-2.0 (matching
-AlpaSim; its protos are vendored under `proto/` with attribution).
+**Pins:** AlpaSim commit `a1f05bb628f3` (proto v0, `alpasim_grpc` 0.54.0) ·
+CARLA 0.9.16 · Python 3.10 (bridge) / 3.12 (AlpaSim) · tested on NVIDIA A100
+with CARLA in Docker (`-RenderOffScreen`). License: Apache-2.0.
 
----
+## How it works
 
-## What is this, if I know neither protobuf nor AlpaSim?
-
-**Protobuf/gRPC in one paragraph.** A `.proto` file declares typed messages
-and services (named remote calls with request/response types). `protoc`
-turns it into Python classes that serialize to a compact wire format, and
-gRPC exposes the service over the network so a client in one process can
-call a server in another — even across Python versions or languages. The
-`.proto` files are the whole contract: both sides only need to agree on
-them. AlpaSim publishes a renderer contract called `SensorsimService`; this
-library is a server that fulfills it using CARLA.
-
-**AlpaSim's closed loop.** AlpaSim's *runtime* owns all world state. Each
-tick:
+AlpaSim's runtime owns all world state. Each tick it sends the renderer a
+`render_rgb` request containing the pose of every object (`dynamic_objects`),
+the camera pose and intrinsics, and a time window. The bridge teleports CARLA
+actors to exactly those poses (physics and autopilot off), places the camera,
+ticks the simulator once, captures the frame, and returns encoded image bytes.
+CARLA never simulates motion — it only renders the state AlpaSim dictates.
 
 ```
-        ┌──────────────────────────────────────────────────────┐
-        │                   AlpaSim RUNTIME                    │
-        │     (owns all object/ego trajectories and time)      │
-        └──┬─────────────────┬─────────────────────┬───────────┘
- "objects are HERE,          │                     │
-  camera is HERE —   "here are frames,    "apply this plan →
-  give me frames"     give me a plan"      new ego pose"
-           │                 │                     │
-           ▼                 ▼                     ▼
-    ┌────────────┐    ┌────────────┐   ┌─────────────────────┐
-    │  RENDERER  │    │   DRIVER   │   │ CONTROLLER/PHYSICS  │
-    │ (this lib) │    │ (Alpamayo…)│   │   (vehicle model)   │
-    └────────────┘    └────────────┘   └─────────────────────┘
-           └───────────── repeat every tick ───────────┘
+AlpaSim runtime ──render_rgb──▶ alpasim-carla ──tick/capture──▶ CARLA server
+      ▲                              (3.10 process)              (any reachable
+      └── frames ── driver policy                                 0.9.16 server)
 ```
 
-**The puppet theater.** AlpaSim moves the puppets; CARLA takes the photo.
-On every `render_rgb` the request says where every object is and where the
-camera is. The bridge teleports CARLA actors to exactly those poses (CARLA
-physics and autopilot OFF), places the camera, ticks once, captures, and
-returns encoded image bytes. CARLA never simulates object motion — two
-owners of state would diverge. The bridge's only cross-call memory is the
-track-id registry: unseen id → spawn, known id → teleport, absent id →
-despawn.
+The two-Python split is structural: AlpaSim requires 3.12, the CARLA client
+wheel requires 3.10. The gRPC boundary means the bridge just runs as its own
+3.10 process.
 
-**Why two Pythons.** AlpaSim needs Python 3.12; CARLA's client wheel needs
-3.10. The gRPC boundary means the bridge is simply its own 3.10 process —
-you never fight that conflict. The only thing installed into AlpaSim's env
-is `alpasim-carla-configs` (pure YAML), which makes `renderer=carla` a
-wizard flag.
+## Components
 
----
+| Component | What it is |
+|---|---|
+| `src/alpasim_carla/server.py` | The gRPC server. Implements all 8 `SensorsimService` RPCs against a pluggable backend (CARLA or synthetic). |
+| `src/alpasim_carla/world.py` | The CARLA backend: synchronous-mode connection, pooled RGB sensors, the render path (sync actors → place camera → tick → capture → encode). |
+| `src/alpasim_carla/registry.py` | Track-id → CARLA actor registry, the bridge's only cross-call state. Unseen id → spawn, known id → teleport, absent id → despawn. Blueprint choice from the scene's actor table (label + bbox dims), with a box-prop fallback — objects are never dropped. |
+| `src/alpasim_carla/frames.py` | Pure coordinate math between AlpaSim (right-handed ENU, quaternions) and Unreal (left-handed, degrees), including camera optical-frame handling. No CARLA or gRPC imports; fully unit-tested. |
+| `src/alpasim_carla/cameras.py` | Maps `CameraSpec` intrinsics to CARLA's pinhole camera. Non-pinhole models (ftheta, fisheye, distortion, rolling shutter) fail explicitly unless `--allow-pinhole-approximation` is set. |
+| `src/alpasim_carla/scenes.py` + `scenes/` | Scene manifests (YAML): `scene_id` → CARLA map, camera rig served by `get_available_cameras`, actor table, world anchor. `scenes/examples/` has ready-made scenes on stock towns. |
+| `src/alpasim_carla/aslio.py` | Reader for AlpaSim `.asl` rollout logs (length-prefixed protobuf), used by the replay tools. |
+| `src/alpasim_carla/_proto/`, `proto/` | The pinned AlpaSim protos (vendored, Apache-2.0, attribution in `proto/README.md`) and generated stubs. |
+| `configs_pkg/` | `alpasim-carla-configs`: a pure-YAML package registering an `alpasim.configs` entry point, which makes `renderer=carla` a flag for AlpaSim's wizard. This is the only thing that touches AlpaSim's environment. |
+| `tools/` | `replay_contract.py` (replay recorded traffic against the servicer, no CARLA), `replay_render.py` (same, real rendering + checks), `validate_rollout.py` (closed-loop run validation + video), `record_scene.py` (record CARLA drives into test fixtures), `gen_protos.sh`. |
+| `docs/CONTRACT.md` | Per-RPC contract: every field consumed/produced, units, coordinate frames. PRs that change behavior must change it. |
+| `evidence/` | Artifacts from the validation gates (G0–G4): replay reports, render metrics, closed-loop summaries, transcripts. |
 
 ## Install
 
 ```bash
-# the bridge (Python 3.10)
-pip install "alpasim-carla[carla]"        # or: pip install -e ".[carla,dev]"
+# bridge (Python 3.10 env)
+pip install "alpasim-carla[carla]"
 
-# the wizard config shim (into AlpaSim's Python 3.12 env)
+# config shim (into AlpaSim's Python 3.12 env)
 pip install alpasim-carla-configs        # or: pip install -e configs_pkg/
 ```
 
-> **Custom CARLA builds:** the PyPI `carla` wheel only speaks to stock
-> CARLA 0.9.16. If your server is a custom build (e.g. an all-maps CI image),
-> install the client wheel that ships inside it instead — it lives at
-> `/workspace/PythonAPI/carla/dist/*cp310*linux_x86_64.whl` in CARLA images:
->
-> ```bash
-> CID=$(docker create <your-carla-image>) && \
->   docker cp "$CID":/workspace/PythonAPI/carla/dist/. /tmp/carla-dist && \
->   docker rm "$CID" && pip install /tmp/carla-dist/carla-0.9.16-cp310-cp310-linux_x86_64.whl
-> ```
+Custom CARLA builds: the PyPI `carla` wheel only speaks to stock 0.9.16. For
+a custom server build, install the client wheel shipped inside its image:
+
+```bash
+CID=$(docker create <your-carla-image>) && \
+  docker cp "$CID":/workspace/PythonAPI/carla/dist/. /tmp/carla-dist && \
+  docker rm "$CID" && pip install /tmp/carla-dist/carla-0.9.16-cp310-cp310-linux_x86_64.whl
+```
 
 ## Quickstart
 
-1. **Start a CARLA 0.9.16 server** (bring your own, or):
+1. Start a CARLA 0.9.16 server (or use one you already have):
 
    ```bash
    alpasim-carla launch-carla --image carlasim/carla:0.9.16 \
        --server-bin /home/carla/CarlaUE4.sh --gpu 0 --rpc-port 3000
    ```
 
-2. **Start the bridge** (Python 3.10 env):
+2. Start the bridge:
 
    ```bash
    alpasim-carla serve --port 50051 --scenes-dir scenes/examples \
@@ -100,15 +82,13 @@ pip install alpasim-carla-configs        # or: pip install -e configs_pkg/
        --allow-pinhole-approximation
    ```
 
-3. **Run AlpaSim against it** (from your AlpaSim checkout; either install
-   `alpasim-carla-configs` into AlpaSim's Python 3.12 env, or pass our config
-   dir explicitly with Hydra's `--config-dir` as below):
+3. Run AlpaSim against it (from your AlpaSim checkout):
 
    ```bash
    uv run alpasim_wizard \
        --config-dir /path/to/alpasim-carla/configs_pkg/alpasim_carla_configs/configs \
        deploy=local topology=1gpu driver=alpamayo1_5 renderer=carla \
-       'wizard.external_services.renderer=["<your-host-ip>:50051"]' \
+       'wizard.external_services.renderer=["<host-ip>:50051"]' \
        wizard.run_method=NONE wizard.log_dir=./out \
        runtime.endpoints.physics.skip=true \
        runtime.simulation_config.physics_update_mode=NONE \
@@ -117,39 +97,36 @@ pip install alpasim-carla-configs        # or: pip install -e configs_pkg/
        up --no-build --exit-code-from runtime-0 --remove-orphans
    ```
 
-   (`wizard.run_method=NONE` generates the compose file without running it,
-   which keeps GPU/port assignment reviewable; drop it to let the wizard
-   launch compose itself.)
+   `--config-dir` is optional if `alpasim-carla-configs` is installed in the
+   wizard's env. `wizard.run_method=NONE` generates the compose file without
+   running it; drop it to let the wizard launch compose itself.
 
-The exact end-to-end commands used to validate this repo (with artifacts)
-live in `PLAN.md` §4 and `evidence/`.
+The exact validated end-to-end commands and their artifacts are in `PLAN.md`
+§4 and `evidence/`.
 
-## The contract, scenes, and the no-guessing policy
+## Error policy
 
-* `docs/CONTRACT.md` documents, per RPC, every field consumed/produced with
-  units and coordinate frames. PRs that change behavior must change it.
-* Scene manifests (`scenes/`) map an AlpaSim `scene_id` to a CARLA map, the
-  camera rig served by `get_available_cameras`, an actor table (labels +
-  bbox dims → blueprints), and a `local_to_world` anchor. Generate one from
-  a recorded rollout: `alpasim-carla scene-from-asl rollout.asl --out my.yaml`.
-* No silent fallbacks: unsupported camera models fail with a gRPC error
-  naming the field; `--allow-pinhole-approximation` is the only (explicit)
-  degradation path. Unknown scenes fail listing the available ones.
-  Unmappable object categories spawn a documented box-prop fallback and log
-  a structured warning — never a silent skip.
+- Unknown `scene_id` → `NOT_FOUND`, listing available scenes.
+- Unsupported camera model/distortion/shutter → `INVALID_ARGUMENT` naming the
+  field; `--allow-pinhole-approximation` is the only degradation path, and it
+  is opt-in.
+- Unmappable object category → documented box-prop fallback plus a structured
+  warning; never a silent skip.
+- `render_lidar` → `UNIMPLEMENTED` (out of scope for v0.1).
 
-## Scope (v0.1) and roadmap
+## Scope and roadmap
 
-In: `render_rgb`, camera-only `render_aggregated`, all discovery RPCs,
+v0.1: `render_rgb`, camera-only `render_aggregated`, all discovery RPCs,
 pinhole cameras (+ explicit ftheta/fisheye approximation), example scenes on
-stock towns, scene-from-asl tooling, Docker.
+stock towns, scene tooling, Docker.
+
 Roadmap: lidar, distortion post-warp, rolling-shutter simulation, instance
 pooling, CARLA-backed traffic/physics services, Windows.
 
 ## Development
 
 ```bash
-pip install -e ".[dev]"          # no carla needed for the test suite
-pytest tests/ -m "not carla"     # simulator-free suite (gate G1)
+pip install -e ".[dev]"          # carla not required for the test suite
+pytest tests/ -m "not carla"     # simulator-free suite
 tools/gen_protos.sh              # regenerate vendored stubs
 ```
