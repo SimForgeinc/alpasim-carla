@@ -1,0 +1,170 @@
+{
+  "tool": "replay_contract",
+  "pinned_api_version": [
+    0,
+    54,
+    0
+  ],
+  "rollouts": [
+    {
+      "asl": "/tmp/alpasim-carla-public-audit/alpamayo-carla-sim2real/evidence/auto-sim2real-pilot-001/alpasim_alpamayo15_nurec_main_20s_label_prompted_eval/gpu0/rollouts/clipgt-2036568b-916a-4d9d-b4c9-9946d2b3d62d/fd3b5a86-6394-11f1-8cc9-85fa07fb4889/rollout.asl",
+      "scene_id": "clipgt-2036568b-916a-4d9d-b4c9-9946d2b3d62d",
+      "entry_counts": {
+        "rollout_metadata": 1,
+        "available_cameras_request": 1,
+        "available_cameras_return": 1,
+        "driver_session_request": 1,
+        "traffic_session_request": 1,
+        "physics_request": 163,
+        "physics_return": 163,
+        "actor_poses": 184,
+        "available_ego_masks_request": 1,
+        "available_ego_masks_return": 1,
+        "render_request": 732,
+        "driver_camera_image": 732,
+        "driver_ego_trajectory": 183,
+        "route_request": 182,
+        "controller_request": 182,
+        "controller_return": 182,
+        "driver_request": 162,
+        "driver_return": 162
+      },
+      "rpcs": {
+        "get_version": {
+          "count": 1,
+          "version_id": "alpasim-carla 0.1.0 (synthetic)"
+        },
+        "get_available_scenes": {
+          "count": 1,
+          "scene_ids": [
+            "clipgt-01d503d4-449b-46fc-8d78-9085e70d3554",
+            "clipgt-2036568b-916a-4d9d-b4c9-9946d2b3d62d"
+          ]
+        },
+        "get_available_cameras": {
+          "count": 1,
+          "served": [
+            "camera_cross_left_120fov",
+            "camera_cross_right_120fov",
+            "camera_front_tele_30fov",
+            "camera_front_wide_120fov",
+            "camera_rear_left_70fov",
+            "camera_rear_right_70fov"
+          ],
+          "needed": [
+            "camera_cross_left_120fov",
+            "camera_cross_right_120fov",
+            "camera_front_tele_30fov",
+            "camera_front_wide_120fov"
+          ]
+        },
+        "get_available_ego_masks": {
+          "count": 1,
+          "served_masks": 0,
+          "recorded_masks": 2,
+          "note": "bridge publishes no ego masks in v0.1; runtime then disables ego masking"
+        },
+        "get_available_trajectories": {
+          "count": 1,
+          "trajectories": 0
+        },
+        "render_rgb": {
+          "count": 732,
+          "failed": 0,
+          "p50_ms": 0.67,
+          "p95_ms": 1.17
+        },
+        "render_aggregated": {
+          "count": 1,
+          "rgb_returns": 2
+        },
+        "render_lidar": {
+          "count": 1,
+          "num_points": 0
+        }
+      },
+      "failures": [],
+      "passed": true
+    },
+    {
+      "asl": "/tmp/alpasim-carla-public-audit/alpamayo-carla-sim2real/evidence/auto-sim2real-pilot-001/alpasim_alpamayo15_smoke_config/rollouts/clipgt-01d503d4-449b-46fc-8d78-9085e70d3554/a92aba6e-613b-11f1-82a7-67091cc2d479/rollout.asl",
+      "scene_id": "clipgt-01d503d4-449b-46fc-8d78-9085e70d3554",
+      "entry_counts": {
+        "rollout_metadata": 1,
+        "available_cameras_request": 1,
+        "available_cameras_return": 1,
+        "driver_session_request": 1,
+        "traffic_session_request": 1,
+        "physics_request": 1,
+        "physics_return": 1,
+        "actor_poses": 7,
+        "available_ego_masks_request": 1,
+        "available_ego_masks_return": 1,
+        "render_request": 24,
+        "driver_camera_image": 24,
+        "driver_ego_trajectory": 6,
+        "route_request": 6,
+        "controller_request": 5,
+        "controller_return": 5,
+        "driver_request": 1
+      },
+      "rpcs": {
+        "get_version": {
+          "count": 1,
+          "version_id": "alpasim-carla 0.1.0 (synthetic)"
+        },
+        "get_available_scenes": {
+          "count": 1,
+          "scene_ids": [
+            "clipgt-01d503d4-449b-46fc-8d78-9085e70d3554",
+            "clipgt-2036568b-916a-4d9d-b4c9-9946d2b3d62d"
+          ]
+        },
+        "get_available_cameras": {
+          "count": 1,
+          "served": [
+            "camera_cross_left_120fov",
+            "camera_cross_right_120fov",
+            "camera_front_tele_30fov",
+            "camera_front_wide_120fov",
+            "camera_rear_left_70fov",
+            "camera_rear_right_70fov"
+          ],
+          "needed": [
+            "camera_cross_left_120fov",
+            "camera_cross_right_120fov",
+            "camera_front_tele_30fov",
+            "camera_front_wide_120fov"
+          ]
+        },
+        "get_available_ego_masks": {
+          "count": 1,
+          "served_masks": 0,
+          "recorded_masks": 2,
+          "note": "bridge publishes no ego masks in v0.1; runtime then disables ego masking"
+        },
+        "get_available_trajectories": {
+          "count": 1,
+          "trajectories": 0
+        },
+        "render_rgb": {
+          "count": 24,
+          "failed": 0,
+          "p50_ms": 0.7,
+          "p95_ms": 0.95
+        },
+        "render_aggregated": {
+          "count": 1,
+          "rgb_returns": 2
+        },
+        "render_lidar": {
+          "count": 1,
+          "num_points": 0
+        }
+      },
+      "failures": [],
+      "passed": true
+    }
+  ],
+  "passed": true
+}
