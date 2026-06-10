@@ -1,0 +1,111 @@
+scene_id: clipgt-01d503d4-449b-46fc-8d78-9085e70d3554
+carla_map: Town10HD_Opt
+description: 'G3 closed-loop scene: OSS scene clipgt-01d503d4 (runtime-side session
+  data comes from AlpaSim scene catalog) rendered in CARLA Town10HD_Opt; recorded
+  ego start anchored onto a road spawn point.'
+local_to_world:
+  translation:
+  - -68.72206419479491
+  - -27.959680982947674
+  - -0.11150001287460332
+  yaw_deg: -0.15919798612594604
+ground_z: null
+blueprint_overrides: {}
+cameras:
+- logical_id: camera_cross_left_120fov
+  rig_to_camera:
+    translation:
+    - 2.547107696533203
+    - 0.9542992115020752
+    - 1.0079210996627808
+    quat_wxyz:
+    - -0.6916033029556274
+    - 0.6945090293884277
+    - -0.14168775081634521
+    - 0.13880448043346405
+  intrinsics:
+    model: ftheta_param
+    logical_id: camera_cross_left_120fov
+    proto_b64: EowBCQAAAACU5Y1AEQAAAMBZZ4dAGAEiMAAAAAAAAAAAAAAAYEpwUT8AAACgiJoYPgAAAKBh+Ii9AAAAoB3BJT0AAACA1NtmvCowAAAAAAAAAAAAAADgylqNQAAAAEDjQsk/AAAAQPSa6r8AAAAA7xQ7wAAAAMAy2CFAMSAFmLiGsPU/OgkJAAAAAAAA8D8qGGNhbWVyYV9jcm9zc19sZWZ0XzEyMGZvdji4CECAD0gB
+- logical_id: camera_cross_right_120fov
+  rig_to_camera:
+    translation:
+    - 2.526639699935913
+    - -0.969810962677002
+    - 0.9836940765380859
+    quat_wxyz:
+    - 0.15009915828704834
+    - -0.13308656215667725
+    - 0.6947598457336426
+    - -0.690700352191925
+  intrinsics:
+    model: ftheta_param
+    logical_id: camera_cross_right_120fov
+    proto_b64: EowBCQAAACDEzo1AEQAAAABbYodAGAEiMAAAAAAAAAAAAAAAQJSBUT8AAADArCrivQAAAKBUCIU9AAAAIHaCIT0AAADAQ61avCowAAAAAAAAAAAAAAAgwD6NQAAAAODGPdg/AAAAAGtN+L8AAADAQDk5wAAAAADL2h5AMW4zvDey0PU/OgkJAAAAAAAA8D8qGWNhbWVyYV9jcm9zc19yaWdodF8xMjBmb3Y4uAhAgA9IAQ==
+- logical_id: camera_front_tele_30fov
+  rig_to_camera:
+    translation:
+    - 1.9278041124343872
+    - -0.10532723367214203
+    - 1.5693867206573486
+    quat_wxyz:
+    - 0.49186259508132935
+    - -0.5013390183448792
+    - 0.5121292471885681
+    - -0.494422972202301
+  intrinsics:
+    model: ftheta_param
+    logical_id: camera_front_tele_30fov
+    proto_b64: EowBCQAAAIDZ/o1AEQAAAABo8YBAGAEiMAAAAAAAAAAAAAAAAPnAMT8AAABgyjn/vQAAAACE9lK9AAAAgD54wDwAAAAgGTr1OyowAAAAAAAAAAAAAAAgxtasQAAAAGDMhTZAAAAAwPBkS0AAAABAS/90wAAAAKD9lWLAMeAJMuOPM9M/OgkJAAAAAAAA8D8qF2NhbWVyYV9mcm9udF90ZWxlXzMwZm92OLgIQIAPSAE=
+- logical_id: camera_front_wide_120fov
+  rig_to_camera:
+    translation:
+    - 2.01627254486084
+    - -0.061019591987133026
+    - 1.5914044380187988
+    quat_wxyz:
+    - -0.4964086413383484
+    - 0.5043780207633972
+    - -0.49575066566467285
+    - 0.503400981426239
+  intrinsics:
+    model: ftheta_param
+    logical_id: camera_front_wide_120fov
+    proto_b64: EowBCQAAAMDk4I1AEQAAACDTlodAGAEiMAAAAAAAAAAAAAAAwLxRUT8AAADAhM9fPgAAACDTltm9AAAAoKV5Rz0AAABAPCiUvCowAAAAAAAAAAAAAADA8oONQAAAAOBn9CXAAAAAIDVaQEAAAAAAe1lTwAAAAOAWQkBAMYscT2w5nfU/OgkJAAAAAAAA8D8qGGNhbWVyYV9mcm9udF93aWRlXzEyMGZvdji4CECAD0gB
+- logical_id: camera_rear_left_70fov
+  rig_to_camera:
+    translation:
+    - 2.1991591453552246
+    - 1.0855469703674316
+    - 1.1520012617111206
+    quat_wxyz:
+    - 0.6057456731796265
+    - -0.6051592826843262
+    - -0.36812663078308105
+    - 0.3624047040939331
+  intrinsics:
+    model: ftheta_param
+    logical_id: camera_rear_left_70fov
+    proto_b64: EowBCQAAAKASK45AEQAAACAQ/4BAGAEiMAAAAAAAAAAAAAAAwGPJRD8AAABAUhExPgAAACCdV7y9AAAAIGGDLD0AAACgBwCBvCowAAAAAAAAAAAAAACAUaOYQAAAAED3iDbAAAAAgAdPaEAAAADgM52BwAAAAKDeUX9AMRl4A5oca+Y/OgkJAAAAAAAA8D8qFmNhbWVyYV9yZWFyX2xlZnRfNzBmb3Y4uAhAgA9IAQ==
+- logical_id: camera_rear_right_70fov
+  rig_to_camera:
+    translation:
+    - 2.1263248920440674
+    - -1.0209566354751587
+    - 1.1663774251937866
+    quat_wxyz:
+    - -0.36042430996894836
+    - 0.36463844776153564
+    - 0.6091309785842896
+    - -0.6050558686256409
+  intrinsics:
+    model: ftheta_param
+    logical_id: camera_rear_right_70fov
+    proto_b64: EowBCQAAAKCUAo5AEQAAAGBiNoFAGAEiMAAAAAAAAAAAAAAAYITPRD8AAABAfgw2PgAAAKACtcG9AAAAgFnwMD0AAACAdY+DvCowAAAAAAAAAAAAAACAT5yYQAAAAOAt/jvAAAAA4GDKbUAAAACgDbuEwAAAAKD754FAMRl4A5oca+Y/OgkJAAAAAAAA8D8qF2NhbWVyYV9yZWFyX3JpZ2h0XzcwZm92OLgIQIAPSAE=
+actors:
+- actor_id: EGO
+  label: ''
+  size_lwh:
+  - 5.206999778747559
+  - 2.1570000648498535
+  - 1.8229999542236328

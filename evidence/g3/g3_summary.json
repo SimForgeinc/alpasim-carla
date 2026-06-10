@@ -1,0 +1,26 @@
+{
+  "run_dir": "evidence/g3/run",
+  "checks": {
+    "ego_pose_count": 199,
+    "render_requests_logged": 792,
+    "video_frames": 198,
+    "ego_displacement_m": 61.86,
+    "ego_path_length_m": 61.92
+  },
+  "failures": [],
+  "rollout_asl": [
+    "evidence/g3/run/rollouts/clipgt-01d503d4-449b-46fc-8d78-9085e70d3554/297f04b0-6473-11f1-819d-bf5ff654cf10/rollout.asl"
+  ],
+  "scorer_outputs": [
+    "evidence/g3/run/aggregate/metrics_results.parquet",
+    "evidence/g3/run/aggregate/metrics_results.png",
+    "evidence/g3/run/aggregate/metrics_results.txt",
+    "evidence/g3/run/aggregate/metrics_unprocessed.parquet",
+    "evidence/g3/run/metrics_plot.png",
+    "evidence/g3/run/rollouts/clipgt-01d503d4-449b-46fc-8d78-9085e70d3554/297f04b0-6473-11f1-819d-bf5ff654cf10/metrics.parquet",
+    "evidence/g3/run/telemetry/metrics.prom",
+    "evidence/g3/run/telemetry/metrics_worker_0.prom"
+  ],
+  "video": "evidence/g3/g3_front_wide.mp4",
+  "passed": true
+}

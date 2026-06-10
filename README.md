@@ -72,6 +72,17 @@ pip install "alpasim-carla[carla]"        # or: pip install -e ".[carla,dev]"
 pip install alpasim-carla-configs        # or: pip install -e configs_pkg/
 ```
 
+> **Custom CARLA builds:** the PyPI `carla` wheel only speaks to stock
+> CARLA 0.9.16. If your server is a custom build (e.g. an all-maps CI image),
+> install the client wheel that ships inside it instead — it lives at
+> `/workspace/PythonAPI/carla/dist/*cp310*linux_x86_64.whl` in CARLA images:
+>
+> ```bash
+> CID=$(docker create <your-carla-image>) && \
+>   docker cp "$CID":/workspace/PythonAPI/carla/dist/. /tmp/carla-dist && \
+>   docker rm "$CID" && pip install /tmp/carla-dist/carla-0.9.16-cp310-cp310-linux_x86_64.whl
+> ```
+
 ## Quickstart
 
 1. **Start a CARLA 0.9.16 server** (bring your own, or):
