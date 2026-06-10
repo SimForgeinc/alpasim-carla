@@ -1,0 +1,106 @@
+{
+  "tool": "replay_render",
+  "asl": "/tmp/alpasim-carla-public-audit/alpamayo-carla-sim2real/evidence/auto-sim2real-pilot-001/alpasim_alpamayo15_nurec_main_20s_label_prompted_eval/gpu0/rollouts/clipgt-2036568b-916a-4d9d-b4c9-9946d2b3d62d/fd3b5a86-6394-11f1-8cc9-85fa07fb4889/rollout.asl",
+  "scene_id": "clipgt-2036568b-916a-4d9d-b4c9-9946d2b3d62d",
+  "carla_map": "Town10HD_Opt",
+  "total_requests": 732,
+  "checks": {
+    "decode": 732,
+    "resolution": 732,
+    "actor_count": 732,
+    "repeat": 15
+  },
+  "failures": [],
+  "per_camera": {
+    "camera_cross_left_120fov": 183,
+    "camera_front_wide_120fov": 183,
+    "camera_front_tele_30fov": 183,
+    "camera_cross_right_120fov": 183
+  },
+  "approximation": true,
+  "repeat_deltas": [
+    {
+      "i": 0,
+      "max_pos_m": 2.288818359375e-05,
+      "max_ang_deg": 0.0
+    },
+    {
+      "i": 50,
+      "max_pos_m": 0.0,
+      "max_ang_deg": 0.0
+    },
+    {
+      "i": 100,
+      "max_pos_m": 0.0,
+      "max_ang_deg": 0.0
+    },
+    {
+      "i": 150,
+      "max_pos_m": 0.0,
+      "max_ang_deg": 0.0
+    },
+    {
+      "i": 200,
+      "max_pos_m": 0.0,
+      "max_ang_deg": 0.0
+    },
+    {
+      "i": 250,
+      "max_pos_m": 0.0,
+      "max_ang_deg": 0.0
+    },
+    {
+      "i": 300,
+      "max_pos_m": 0.0,
+      "max_ang_deg": 0.0
+    },
+    {
+      "i": 350,
+      "max_pos_m": 0.0,
+      "max_ang_deg": 0.0
+    },
+    {
+      "i": 400,
+      "max_pos_m": 0.0,
+      "max_ang_deg": 0.0
+    },
+    {
+      "i": 450,
+      "max_pos_m": 0.0,
+      "max_ang_deg": 0.0
+    },
+    {
+      "i": 500,
+      "max_pos_m": 1.52587890625e-05,
+      "max_ang_deg": 0.0
+    },
+    {
+      "i": 550,
+      "max_pos_m": 0.0,
+      "max_ang_deg": 0.0
+    },
+    {
+      "i": 600,
+      "max_pos_m": 0.0,
+      "max_ang_deg": 0.0
+    },
+    {
+      "i": 650,
+      "max_pos_m": 0.0,
+      "max_ang_deg": 0.0
+    },
+    {
+      "i": 700,
+      "max_pos_m": 0.0,
+      "max_ang_deg": 0.0
+    }
+  ],
+  "latency_ms": {
+    "p50": 128.1,
+    "p95": 185.8,
+    "mean": 135.5,
+    "count": 732
+  },
+  "passed": true,
+  "contact_sheet": "evidence/g2/contact_sheet.jpg"
+}
