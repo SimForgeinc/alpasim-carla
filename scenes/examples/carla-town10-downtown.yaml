@@ -1,0 +1,93 @@
+scene_id: carla-town10-downtown
+carla_map: Town10HD_Opt
+description: Dense downtown block of CARLA's default city town.
+local_to_world:
+  translation:
+  - 0.0
+  - 0.0
+  - 0.5
+  yaw_deg: 0.0
+ground_z: null
+blueprint_overrides: {}
+cameras:
+- logical_id: camera_cross_left_120fov
+  rig_to_camera:
+    translation:
+    - 2.6
+    - 0.9
+    - 0.78
+    quat_wxyz:
+    - 0.67438
+    - -0.67438
+    - 0.212631
+    - -0.212631
+  intrinsics:
+    model: opencv_pinhole
+    logical_id: camera_cross_left_120fov
+    width: 1920
+    height: 1080
+    fx: 554.256
+    fy: 554.256
+    cx: 960.0
+    cy: 540.0
+- logical_id: camera_front_wide_120fov
+  rig_to_camera:
+    translation:
+    - 1.89
+    - -0.06
+    - 1.32
+    quat_wxyz:
+    - 0.5
+    - -0.5
+    - 0.5
+    - -0.5
+  intrinsics:
+    model: opencv_pinhole
+    logical_id: camera_front_wide_120fov
+    width: 1920
+    height: 1080
+    fx: 554.256
+    fy: 554.256
+    cx: 960.0
+    cy: 540.0
+- logical_id: camera_cross_right_120fov
+  rig_to_camera:
+    translation:
+    - 2.57
+    - -0.92
+    - 0.82
+    quat_wxyz:
+    - 0.212631
+    - -0.212631
+    - 0.67438
+    - -0.67438
+  intrinsics:
+    model: opencv_pinhole
+    logical_id: camera_cross_right_120fov
+    width: 1920
+    height: 1080
+    fx: 554.256
+    fy: 554.256
+    cx: 960.0
+    cy: 540.0
+- logical_id: camera_front_tele_30fov
+  rig_to_camera:
+    translation:
+    - 1.87
+    - -0.11
+    - 1.31
+    quat_wxyz:
+    - 0.5
+    - -0.5
+    - 0.5
+    - -0.5
+  intrinsics:
+    model: opencv_pinhole
+    logical_id: camera_front_tele_30fov
+    width: 1920
+    height: 1080
+    fx: 3582.769
+    fy: 3582.769
+    cx: 960.0
+    cy: 540.0
+actors: []

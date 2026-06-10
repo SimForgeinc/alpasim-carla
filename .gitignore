@@ -11,3 +11,4 @@ build/
 evidence/**/frames/
 evidence/**/*.mp4
 evidence/g3/run/
+.wheels/
