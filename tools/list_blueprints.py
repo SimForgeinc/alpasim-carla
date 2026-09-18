@@ -26,8 +26,9 @@ them to stderr: the server version string, the map name before and after a
 load (the exact strings the manifest compare depends on), whether
 ``load_world_if_different`` exists on this client, whether any
 ``sensor.other.v2x*`` blueprint is present, whether a ``static.prop.box*``
-exists to serve as the ladder's terminal fallback, and whether set_weather
-raises or is tolerated.
+exists to serve as the ladder's terminal fallback, whether set_weather
+raises or is tolerated, and whether a rigidly-attached camera follows its
+parent vehicle under synchronous mode - which is ADR-015's premise.
 """
 
 from __future__ import annotations
@@ -72,6 +73,87 @@ def measure(world, carla, blueprint) -> Tuple[float, float, float]:
             pass
 
 
+def probe_attach(world, carla, say) -> None:
+    """Settle ADR-015's premise: does a rigidly-attached camera follow the
+    vehicle under synchronous mode on THIS build?
+
+    CARLA 0.10.0's own first-steps documentation shows
+    ``world.spawn_actor(camera_bp, transform, attach_to=vehicle)`` for
+    ``sensor.camera.rgb``, so the API exists in the release. What is
+    unverified is whether it behaves correctly under synchronous mode on
+    the Belmont build, and whether Rigid is the default attachment type.
+
+    Spawn a vehicle, attach a camera, tick, teleport the vehicle, tick,
+    and check the camera moved with it. If it did not, ADR-015's approach
+    does not work and the ego-camera design needs rethinking before any
+    code is written against it.
+    """
+    library = world.get_blueprint_library()
+    vehicles = library.filter("vehicle.*")
+    if not vehicles:
+        say("attach_to probe          : SKIPPED, no vehicle blueprints")
+        return
+
+    settings = world.get_settings()
+    was_sync = settings.synchronous_mode
+    was_delta = settings.fixed_delta_seconds
+    settings.synchronous_mode = True
+    settings.fixed_delta_seconds = 0.1
+    world.apply_settings(settings)
+
+    vehicle = camera = None
+    try:
+        start = carla.Transform(carla.Location(x=0.0, y=0.0, z=300.0))
+        vehicle = world.try_spawn_actor(vehicles[0], start)
+        if vehicle is None:
+            say("attach_to probe          : SKIPPED, could not spawn a vehicle")
+            return
+
+        camera_bp = library.find("sensor.camera.rgb")
+        camera_bp.set_attribute("image_size_x", "64")
+        camera_bp.set_attribute("image_size_y", "64")
+        offset = carla.Transform(carla.Location(x=2.0, y=0.0, z=1.5))
+        try:
+            camera = world.spawn_actor(
+                camera_bp, offset, attach_to=vehicle,
+                attachment_type=carla.AttachmentType.Rigid,
+            )
+            how = "explicit AttachmentType.Rigid"
+        except (AttributeError, TypeError, RuntimeError) as exc:
+            say(f"attach_to probe          : Rigid not accepted ({exc}); "
+                f"retrying with the default")
+            camera = world.spawn_actor(camera_bp, offset, attach_to=vehicle)
+            how = "default attachment type"
+
+        world.tick()
+        before = camera.get_transform().location
+
+        moved_to = carla.Transform(carla.Location(x=120.0, y=45.0, z=300.0))
+        vehicle.set_transform(moved_to)
+        world.tick()
+        after = camera.get_transform().location
+
+        delta = ((after.x - before.x) ** 2 + (after.y - before.y) ** 2) ** 0.5
+        followed = delta > 1.0
+        say(f"attach_to probe          : {how}")
+        say(f"  camera before          : ({before.x:.2f}, {before.y:.2f}, {before.z:.2f})")
+        say(f"  camera after           : ({after.x:.2f}, {after.y:.2f}, {after.z:.2f})")
+        say(f"  moved with vehicle     : {followed}  (delta {delta:.2f} m)")
+        if not followed:
+            say("  *** ADR-015 PREMISE FAILS: the attached camera did not "
+                "follow the vehicle. The ego-camera design needs rethinking.")
+    finally:
+        for actor in (camera, vehicle):
+            if actor is not None:
+                try:
+                    actor.destroy()
+                except RuntimeError:
+                    pass
+        settings.synchronous_mode = was_sync
+        settings.fixed_delta_seconds = was_delta
+        world.apply_settings(settings)
+
+
 def probe(client, world, carla, map_name: str) -> None:
     """Print the day-one facts that no CARLA document settles."""
     say = lambda *a: print(*a, file=sys.stderr)  # noqa: E731
@@ -99,6 +181,8 @@ def probe(client, world, carla, map_name: str) -> None:
     if map_name:
         world = client.load_world(map_name)
         say(f"map_name_after_load({map_name}): {world.get_map().name!r}")
+
+    probe_attach(world, carla, say)
     say("=== end probe ===")
 
 
