@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simforge-frames"
+version = "0.1.0"
+description = "AlpaSim <-> Unreal coordinate frame conversions. Pure math: no protobuf, no gRPC, no CARLA."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+# numpy and nothing else. The point of this distribution is that anything
+# can depend on it without dragging in a protobuf generation - see
+# simforge-closed-loop docs/adr/ADR-017.
+dependencies = ["numpy>=1.23"]
+
+[tool.setuptools.packages.find]
+include = ["simforge_frames*"]

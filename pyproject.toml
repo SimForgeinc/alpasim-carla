@@ -21,6 +21,10 @@ dependencies = [
     "numpy>=1.23",
     "pillow>=10",
     "pyyaml>=6",
+    # The frame conversions, split out so simforge-closed-loop can depend
+    # on them WITHOUT importing this package and its 0.54.0 proto stubs.
+    # See simforge-closed-loop docs/adr/ADR-017.
+    "simforge-frames",
 ]
 
 [project.optional-dependencies]
@@ -40,6 +44,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src", "packages/simforge-frames"]
 markers = [
     "carla: requires a reachable CARLA server (excluded from the simulator-free suite)",
     "carla_mutating: changes server state (load_world); skipped unless --run-mutating",
