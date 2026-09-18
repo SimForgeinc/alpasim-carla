@@ -19,7 +19,15 @@ case "$SOURCE" in
     merge|squash) exit 0 ;;
 esac
 [ -f "$COUNT_FILE" ] || exit 0
-grep -q "^Verified: " "$MSG_FILE" && exit 0
+# Already written? The test is "a line beginning Verified: FOLLOWED BY
+# DIGITS", not merely "a line beginning Verified:". A commit message that
+# talks ABOUT this trailer can wrap so the word lands at the start of a
+# line - which the commit introducing the verified-line CI job did, in the
+# sentence describing the trailer - and the looser test read that prose as
+# the trailer and wrote no counts at all. The commit went out with no
+# provenance line, quietly, which is the one failure this hook exists to
+# prevent. The count always begins with a digit; prose does not.
+grep -qE '^Verified: [0-9]' "$MSG_FILE" && exit 0
 
 COUNT="$(cat "$COUNT_FILE")"
 # Insert above any trailers so Co-Authored-By stays last.

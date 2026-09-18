@@ -57,7 +57,18 @@ jobs:
             exit 0
           fi
 
-          line="$(git log -1 --format=%B | grep '^Verified: ' || true)"
+          # The LAST such line, not the first. A trailer lives at the end of
+          # the message, and the body above it is prose that can wrap so
+          # that 'Verified:' lands at the start of a line - which is what
+          # the commit introducing this job did, in the sentence describing
+          # the trailer. Picking the first match read that prose as the
+          # trailer and called a green commit hand-written. Found by the
+          # check on its own commit, which is the best case available.
+          #
+          # git's own %(trailers) is not the answer here: the hook writes
+          # 'Verified:' above a blank line and Co-Authored-By below it, and
+          # a blank line ends a trailer block, so git sees only the latter.
+          line="$(git log -1 --format=%B | grep '^Verified: ' | tail -1 || true)"
           if [ -z "$line" ]; then
             echo "::error::$(git log -1 --format=%h) has no 'Verified:' trailer."
             echo
