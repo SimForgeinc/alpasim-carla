@@ -2,6 +2,20 @@
   <img src="docs/assets/banner.png" alt="AlpasimCarla — open-source CARLA renderer for NVIDIA AlpaSim" width="100%">
 </p>
 
+<p align="center">
+  <a href="https://github.com/SimForgeinc/alpasim-carla/actions/workflows/ci.yml"><img src="https://github.com/SimForgeinc/alpasim-carla/actions/workflows/ci.yml/badge.svg" alt="ci"></a>
+  <a href="https://github.com/SimForgeinc/alpasim-carla/actions/workflows/verified-line.yml"><img src="https://github.com/SimForgeinc/alpasim-carla/actions/workflows/verified-line.yml/badge.svg" alt="verified-line"></a>
+</p>
+
+The second badge is the one that needs explaining. There is **no server-side
+branch protection here** — GitHub Free has no rulesets or protected branches
+on a private repository — so `main` is guarded by hooks and by what these two
+badges make visible, not by anything that can refuse a push. `verified-line`
+fails when the tip commit lacks the `Verified:` trailer that
+`tools/hooks/prepare-commit-msg` writes from the suite `tools/hooks/pre-commit`
+just ran. Run `make hooks` in a fresh clone; see AGENTS.md in
+[simforge-closed-loop](https://github.com/SimForgeinc/simforge-closed-loop).
+
 A CARLA-backed renderer for [NVIDIA AlpaSim](https://github.com/NVIDIA/alpasim).
 It implements AlpaSim's `SensorsimService` gRPC contract, so an AlpaSim driver
 policy (Alpamayo 1.5, Transfuser, your own) can drive closed-loop in CARLA

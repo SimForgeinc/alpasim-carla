@@ -1,0 +1,104 @@
+name: verified-line
+
+on:
+  push:
+  pull_request:
+
+# WHAT THIS IS, AND WHY IT IS A SEPARATE WORKFLOW RATHER THAN A SECOND JOB
+# IN ci.yml.
+#
+# There is no server-side branch protection on this repository. GitHub Free
+# offers neither rulesets nor protected branches on a private repository;
+# that needs the Team plan, and the upgrade is a business decision rather
+# than an engineering one. So `main` accepts a direct push from anybody who
+# can write, and nothing on the server stops it.
+#
+# What is left is hooks plus visible CI. `tools/hooks/pre-commit` runs the
+# suite and `tools/hooks/prepare-commit-msg` writes its counts into the
+# commit message as a `Verified:` trailer, so every commit states the suite
+# result it was made against and nobody types that number by hand. But a
+# hook is local: it is absent from a fresh clone until `make hooks`, and
+# `--no-verify` skips it. This job is the part of that arrangement which
+# runs on GitHub's machines instead of the author's, and it makes the
+# absence of the trailer VISIBLE rather than preventable.
+#
+# It is a workflow of its own because a badge names a workflow, not a job.
+# Two badges at the top of the README - one for the suite, one for the
+# trailer - is the whole point: with no server-side gate, the honest thing
+# is to publish the state rather than to claim it is enforced.
+#
+# THIS DOES NOT PREVENT ANYTHING. A red badge is a signal to a human.
+# Treat it that way and do not mistake it for a gate.
+
+jobs:
+  verified-line:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # On a pull_request event the default checkout is GitHub's
+          # synthetic merge commit, which nobody authored and which
+          # therefore carries no trailer. Check the branch's own tip.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 1
+
+      - name: "The HEAD commit carries the hook's Verified: trailer"
+        run: |
+          set -euo pipefail
+
+          # `git rev-list --parents` lies under a depth-1 checkout, which
+          # grafts the parents away. The commit OBJECT is intact, so read
+          # the parent lines out of it directly.
+          parents="$(git cat-file -p HEAD | grep -c '^parent ' || true)"
+          if [ "$parents" -ge 2 ]; then
+            echo "HEAD is a merge commit ($parents parents). A merge runs no"
+            echo "suite of its own and so carries no counts; the hook skips"
+            echo "merges for the same reason. Nothing to check."
+            exit 0
+          fi
+
+          line="$(git log -1 --format=%B | grep '^Verified: ' || true)"
+          if [ -z "$line" ]; then
+            echo "::error::$(git log -1 --format=%h) has no 'Verified:' trailer."
+            echo
+            echo "Every commit here states the suite result it was made"
+            echo "against, and the number is written by"
+            echo "tools/hooks/prepare-commit-msg from the run"
+            echo "tools/hooks/pre-commit just did - never typed. A commit"
+            echo "without the line was made with the hooks uninstalled or"
+            echo "with --no-verify, so it does not say whether its suite"
+            echo "passed."
+            echo
+            echo "Install the hooks with 'make hooks' and amend:"
+            echo "  git commit --amend --no-edit"
+            exit 1
+          fi
+
+          # A trailer that reports failures is worse than no trailer: it
+          # looks like evidence. The hook only writes one after a green
+          # run, so a red one here means the message was edited by hand.
+          #
+          # The match is '<n> failed' and not '*failed*', because the
+          # substring form calls this repository's own green suite red:
+          # every commit here ends '1 xfailed', and 'xfailed' contains
+          # 'failed'. pytest writes the count before the word, so requiring
+          # the digits and the space tells the two apart.
+          if printf '%s\n' "$line" | grep -qE '[0-9]+ (failed|error)'; then
+            echo "::error::the Verified: trailer reports a failing suite."
+            echo "  $line"
+            echo
+            echo "The hook writes this line only after a green run, so"
+            echo "this one was typed or edited. Run the suite and amend."
+            exit 1
+          fi
+
+          if ! printf '%s\n' "$line" | grep -qE '^Verified: [0-9]+ passed'; then
+            echo "::error::the Verified: trailer does not name a passed count."
+            echo "  $line"
+            echo
+            echo "Expected the hook's own format, which begins"
+            echo "'Verified: <n> passed'. Anything else was written by hand."
+            exit 1
+          fi
+
+          echo "$line"

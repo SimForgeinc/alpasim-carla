@@ -4,9 +4,13 @@ on:
   push:
   pull_request:
 
-# This job's name is what `main`'s branch protection should require. A
-# pre-commit hook can be bypassed with --no-verify and is absent from a
-# fresh clone until `make hooks`; a required status check is neither.
+# This job's name is what `main`'s branch protection WOULD require, and
+# there is none: GitHub Free offers no rulesets or protected branches on a
+# private repository, so nothing on the server can require a status check.
+# A pre-commit hook can be bypassed with --no-verify and is absent from a
+# fresh clone until `make hooks`. What is left is hooks plus visible CI -
+# this job, the verified-line workflow beside it, and two badges at the top
+# of the README. See AGENTS.md; the Team-plan upgrade is a business call.
 jobs:
   simulator-free:
     runs-on: ubuntu-latest
