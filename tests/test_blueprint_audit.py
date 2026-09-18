@@ -7,7 +7,9 @@ the run record so a pass with two boxed cyclists is visible in the evidence
 rather than discovered in the video.
 """
 
-from alpasim_carla.catalog import parse_catalog
+import pytest
+
+from alpasim_carla.catalog import BlueprintUnavailable, parse_catalog
 from alpasim_carla.registry import GATED_LABELS, audit_scene_blueprints
 from alpasim_carla.scenes import ActorDef, SceneManifest
 
@@ -20,6 +22,18 @@ CATALOG_010 = parse_catalog(
         ]
     ),
     source="catalog_010",
+)
+
+CATALOG_WITH_TWO_WHEELERS = parse_catalog(
+    "\n".join(
+        [
+            "vehicle.lincoln.mkz\tvehicle\t4.90\t2.13\t1.51",
+            "vehicle.diamondback.century\ttwo_wheeler\t1.66\t0.42\t1.04",
+            "walker.pedestrian.0001\twalker\t0\t0\t0",
+            "static.prop.box03\tprop\t0\t0\t0",
+        ]
+    ),
+    source="catalog_0916",
 )
 
 
@@ -79,7 +93,17 @@ def test_several_degraded_actors_are_all_reported():
     }
 
 
-def test_the_curated_0916_catalog_audits_a_cyclist_clean():
-    """Two-wheelers exist on 0.9.16, so the same scene is fine there."""
+def test_a_catalog_that_lists_two_wheelers_audits_a_cyclist_clean():
+    """The category is the difference, not the CARLA version: a listing
+    that has a two-wheeler places the cyclist on it. 0.9.16 did; 0.10
+    removed the category outright."""
     scene = scene_with(ActorDef("7", "cyclist", (1.7, 0.5, 1.1)))
-    assert audit_scene_blueprints(scene) == {}
+    assert audit_scene_blueprints(scene, CATALOG_WITH_TWO_WHEELERS) == {}
+
+
+def test_an_audit_with_no_catalog_refuses_rather_than_assuming_one():
+    """There is no default catalogue: assuming one audited the run against
+    blueprints the server does not have."""
+    scene = scene_with(ActorDef("7", "cyclist", (1.7, 0.5, 1.1)))
+    with pytest.raises(BlueprintUnavailable, match="list_blueprints.py"):
+        audit_scene_blueprints(scene)

@@ -187,8 +187,9 @@ def main(argv=None) -> int:
     serve.add_argument(
         "--blueprint-catalog",
         help="blueprint listing for this server, written by "
-        "tools/list_blueprints.py. Defaults to the curated CARLA 0.9.16 "
-        "table, which is wrong on 0.10.",
+        "tools/list_blueprints.py. Required for the carla backend: there is "
+        "no built-in table any more, because the curated 0.9.16 one is wrong "
+        "in every row on 0.10.",
     )
     serve.add_argument(
         "--allow-pinhole-approximation",

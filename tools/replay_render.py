@@ -74,8 +74,9 @@ def main() -> int:
     parser.add_argument("--allow-pinhole-approximation", action="store_true")
     parser.add_argument(
         "--blueprint-catalog",
-        help="blueprint listing from tools/list_blueprints.py; defaults to "
-        "the curated CARLA 0.9.16 table, which is wrong on 0.10",
+        help="blueprint listing from tools/list_blueprints.py; required - "
+        "there is no built-in table, the curated 0.9.16 one having been "
+        "wrong in every row on 0.10",
     )
     parser.add_argument(
         "--expect-carla-version",

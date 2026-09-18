@@ -9,6 +9,8 @@ import pytest
 
 from alpasim_carla.catalog import (
     BlueprintUnavailable,
+    canonical_listing,
+    catalog_digest,
     default_catalog,
     load_catalog,
     parse_catalog,
@@ -102,18 +104,21 @@ def test_load_catalog_reads_a_file(tmp_path):
     assert load_catalog(str(path)).walker == "walker.pedestrian.0001"
 
 
-def test_default_catalog_is_the_curated_0916_table():
-    catalog = default_catalog()
-    assert catalog.has("vehicle.tesla.model3")
-    assert catalog.fallback_prop == "static.prop.box03"
-    assert [bp for bp, _ in catalog.two_wheelers] == [
-        "vehicle.diamondback.century",
-        "vehicle.yamaha.yzf",
-    ]
+def test_there_is_no_default_catalog_any_more():
+    """The curated 0.9.16 table was reachable by not passing a catalogue,
+    and on 0.10 every one of its rows is wrong - so the run it enabled
+    rendered boxes and scored them. It now refuses instead."""
+    with pytest.raises(BlueprintUnavailable):
+        default_catalog()
 
 
-def test_default_catalog_reports_unknown_ids_as_absent():
-    assert not default_catalog().has("vehicle.lincoln.mkz")
+def test_the_refusal_names_the_tool_that_produces_a_listing():
+    """Whoever hits this on day one must not have to read catalog.py."""
+    with pytest.raises(BlueprintUnavailable) as exc:
+        default_catalog()
+    message = str(exc.value)
+    assert "tools/list_blueprints.py" in message
+    assert "--blueprint-catalog" in message
 
 
 def test_load_failure_names_the_file_and_the_command_that_rebuilds_it(tmp_path):
@@ -140,3 +145,74 @@ def test_every_load_time_failure_carries_the_regeneration_command():
         with pytest.raises(BlueprintUnavailable) as exc:
             parse_catalog(listing, source="blueprints_0.10.txt")
         assert "tools/list_blueprints.py" in str(exc.value)
+
+
+# -- catalogue digest ---------------------------------------------------------
+
+
+def test_the_digest_is_a_sha256_of_the_catalogue_content():
+    digest = catalog_digest(parse_catalog(LISTING))
+    algorithm, _, hexdigest = digest.partition(":")
+    assert algorithm == "sha256"
+    assert len(hexdigest) == 64
+    assert set(hexdigest) <= set("0123456789abcdef")
+
+
+def test_the_digest_survives_reserialisation():
+    """The manifest records the digest; the listing file it came from can
+    be rewritten. Re-emitting the catalogue and parsing it back must not
+    move the value, or the record would look like a different catalogue."""
+    catalog = parse_catalog(LISTING)
+    reparsed = parse_catalog(canonical_listing(catalog))
+    assert catalog_digest(reparsed) == catalog_digest(catalog)
+
+
+def test_the_digest_ignores_comments_whitespace_and_the_source_name(tmp_path):
+    """Two files that make the ladder choose identically are the same
+    catalogue, whatever they are called."""
+    path = tmp_path / "somewhere_else.txt"
+    path.write_text("\n# regenerated on another box\n\n" + LISTING)
+    assert catalog_digest(load_catalog(str(path))) == catalog_digest(
+        parse_catalog(LISTING)
+    )
+
+
+def test_the_digest_changes_when_a_vehicle_rung_changes():
+    swapped = LISTING.replace("vehicle.lincoln.mkz", "vehicle.ue4.lincoln.mkz")
+    assert catalog_digest(parse_catalog(swapped)) != catalog_digest(
+        parse_catalog(LISTING)
+    )
+
+
+def test_the_digest_changes_when_a_dimension_changes():
+    """Dimensions decide nearest-dims selection, so they are part of the
+    catalogue's behaviour, not decoration."""
+    resized = LISTING.replace("4.90\t2.13\t1.51", "5.90\t2.13\t1.51")
+    assert catalog_digest(parse_catalog(resized)) != catalog_digest(
+        parse_catalog(LISTING)
+    )
+
+
+def test_the_digest_changes_when_the_vehicle_order_changes():
+    """Order breaks ties in nearest-dims, so two orderings are two
+    catalogues even with the same ids."""
+    reordered = parse_catalog(LISTING)
+    reordered.vehicles.reverse()
+    assert catalog_digest(reordered) != catalog_digest(parse_catalog(LISTING))
+
+
+def test_the_digest_changes_when_the_walker_or_the_prop_changes():
+    base = catalog_digest(parse_catalog(LISTING))
+    walker = LISTING.replace("walker.pedestrian.0001", "walker.pedestrian.0042")
+    prop = LISTING.replace("static.prop.box03", "static.prop.streetbarrier")
+    assert catalog_digest(parse_catalog(walker)) != base
+    assert catalog_digest(parse_catalog(prop)) != base
+
+
+def test_the_digest_changes_when_an_id_is_added_to_membership():
+    """Membership is a rung too: a manifest override naming an id the
+    server does not have degrades to the prop."""
+    extra = LISTING + "static.prop.trafficcone01\tprop\t0\t0\t0\n"
+    assert catalog_digest(parse_catalog(extra)) != catalog_digest(
+        parse_catalog(LISTING)
+    )

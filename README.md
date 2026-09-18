@@ -286,12 +286,14 @@ pooling, CARLA-backed traffic/physics services, Windows.
 
 ## Targeting a CARLA server that is not stock 0.9.16
 
-The curated blueprint table in `alpasim_carla.catalog` is CARLA 0.9.16. On
-CARLA 0.10 none of its eight vehicle ids exist verbatim, both two-wheeler
-categories were removed, and several survivors carry a
-`vehicle.ue4.<make>.<model>` id — so every lookup misses and the ladder
-degrades each actor to a prop. List the server first, then serve against the
-listing:
+There is no built-in blueprint table. There used to be one, curated for CARLA
+0.9.16, reachable by simply not passing a listing — and on CARLA 0.10 none of
+its eight vehicle ids exist verbatim, both two-wheeler categories were
+removed, and several survivors carry a `vehicle.ue4.<make>.<model>` id, so
+every lookup missed and the ladder degraded each actor to a prop. A run like
+that renders boxes to the driver and scores them, which is only visible in
+the video afterwards, so `default_catalog()` now refuses and names the
+generator instead. List the server first, then serve against the listing:
 
 ```bash
 python tools/list_blueprints.py --carla-port 3000 --map Town10HD_Opt \
