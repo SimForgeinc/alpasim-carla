@@ -199,6 +199,35 @@ def manifest_to_yaml(manifest: SceneManifest) -> str:
     return yaml.safe_dump(data, sort_keys=False)
 
 
+def _require_carla_version(data: Dict[str, object]) -> str:
+    """A handshake that runs only when the field is present is an opt-in.
+
+    ``compat.py`` computes the expected server version from the manifests
+    that declare one, and a scene that omits the field *abstains* - which
+    was written so one versioned manifest could speak for a directory. What
+    it meant in practice is that a manifest could skip the check by saying
+    nothing, and the one scene Stage C actually loads had done exactly that
+    while the three render-test manifests all declared theirs.
+
+    So the field is required at load. Abstention across a directory still
+    works - every scene declares the same version and ``expected_version``
+    collapses the set - and ``--expect-carla-version ''`` still skips the
+    check deliberately, which is the difference between an override and an
+    omission.
+    """
+    version = data.get("carla_version")
+    if isinstance(version, str) and version.strip():
+        return version
+    raise ValueError(
+        f"scene {data.get('scene_id')!r} declares no carla_version. It is the "
+        f"build this scene's anchor and map name were recorded against, and "
+        f"compat.py checks the server against it - so omitting it does not "
+        f"relax the handshake, it skips it. Add the server's version "
+        f'(e.g. carla_version: "0.9.16"), or pass --expect-carla-version "" '
+        f"to skip the check for a run that means to."
+    )
+
+
 def manifest_from_yaml(text: str) -> SceneManifest:
     data = yaml.safe_load(text)
     anchor = data.get("local_to_world") or {}
@@ -210,7 +239,7 @@ def manifest_from_yaml(text: str) -> SceneManifest:
         ground_z=data.get("ground_z"),
         blueprint_overrides=dict(data.get("blueprint_overrides") or {}),
         description=data.get("description", ""),
-        carla_version=data.get("carla_version"),
+        carla_version=_require_carla_version(data),
     )
     for cam in data.get("cameras", []):
         spec = _spec_from_yaml(cam["intrinsics"])
