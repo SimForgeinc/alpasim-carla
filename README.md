@@ -9,8 +9,15 @@ worlds without any changes to AlpaSim's runtime, controller, physics, or
 scorers.
 
 **Pins:** AlpaSim commit `a1f05bb628f3` (proto v0, `alpasim_grpc` 0.54.0) ·
-CARLA 0.9.16 · Python 3.10 (bridge) / 3.12 (AlpaSim) · tested on NVIDIA A100
-with CARLA in Docker (`-RenderOffScreen`). License: Apache-2.0.
+Python 3.10–3.12 (bridge) / 3.12 (AlpaSim) · tested on NVIDIA A100 with CARLA
+0.9.16 in Docker (`-RenderOffScreen`). License: Apache-2.0.
+
+The CARLA version is **not** a repository-wide pin: each scene manifest
+declares the `carla_version` it was recorded against, and the bridge refuses
+to start against a server that does not match. See
+[Targeting a CARLA server that is not stock 0.9.16](#targeting-a-carla-server-that-is-not-stock-0916).
+CARLA 0.10 support is written but **unverified** — no 0.10 server has been
+reached yet; `pytest tests/ -m carla` is the acceptance suite for it.
 
 ## How it works
 
