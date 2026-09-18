@@ -51,9 +51,32 @@ if [ -z "${PYTHON:-}" ]; then
     exit 1
 fi
 
+# One writer per worktree, enforced rather than remembered. Two sessions
+# committing into one worktree is how a report comes out wrong in both
+# directions even when every commit is good, and files were once observed
+# changing under a running test command in the sibling repository. The count
+# only describes the tree it was produced from, so the tree is fingerprinted
+# either side of the suite: git write-tree for the index, git status
+# --porcelain for everything the index does not carry.
+tree_fingerprint() {
+    printf '%s\n' "$(git write-tree)" "$(git status --porcelain)"
+}
+BEFORE="$(tree_fingerprint)"
+
 echo "pre-commit: running the suite with $PYTHON"
 OUTPUT="$(make test PYTHON="$PYTHON" 2>&1)"
 STATUS=$?
+
+if [ "$(tree_fingerprint)" != "$BEFORE" ]; then
+    cat >&2 <<'MSG'
+
+pre-commit: tree changed while the suite ran; another writer is active.
+
+Give each session its own worktree and let the shared branch be where they
+meet. Re-run the commit once the tree is still.
+MSG
+    exit 1
+fi
 
 if [ $STATUS -ne 0 ]; then
     echo "$OUTPUT" | tail -30 >&2
