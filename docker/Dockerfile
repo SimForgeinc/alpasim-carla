@@ -12,6 +12,10 @@
 #       --build-arg PYTHON_VERSION=3.12 \
 #       -t alpasim-carla:0.10 .
 #
+# On a stock 0.9.16 twin the PythonAPI root differs, so add:
+#       --build-arg CARLA_PYTHONAPI=/workspace/PythonAPI \
+#       --build-arg PYTHON_VERSION=3.10
+#
 # CARLA_IMAGE is pinned BY DIGEST, not by tag. A tag on a private registry can
 # be re-pushed, and then two builds of the same Dockerfile silently contain
 # different CARLA clients. Resolve the digest once, record it in the
@@ -38,7 +42,16 @@ ARG CARLA_IMAGE
 
 # The wheel lives at PythonAPI/dist/ on 0.10 and PythonAPI/carla/dist/ on
 # 0.9.x. Copy the whole tree; at least one layout exists in any CARLA image.
-COPY --from=carla-dist /home/carla/PythonAPI/ /tmp/carla-pythonapi/
+#
+# The ROOT differs too, which this assumed away until the first build was
+# attempted: carlasim/carla:0.9.16 keeps it at /workspace/PythonAPI, not
+# /home/carla/PythonAPI, and the build failed with
+#   COPY failed: stat home/carla/PythonAPI/: file does not exist
+# COPY takes no fallbacks, so the root is an argument with the 0.10 layout
+# as its default. Find it in a new image with:
+#   docker run --rm --entrypoint bash <image> -c 'find / -maxdepth 4 -name PythonAPI -type d'
+ARG CARLA_PYTHONAPI=/home/carla/PythonAPI
+COPY --from=carla-dist ${CARLA_PYTHONAPI}/ /tmp/carla-pythonapi/
 
 RUN set -eu; \
     tag="cp$(echo "${PYTHON_VERSION}" | tr -d '.')"; \
