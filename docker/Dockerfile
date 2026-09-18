@@ -92,10 +92,18 @@ COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 COPY scenes ./scenes
 COPY tools ./tools
+# simforge-frames is a dependency of this package and is NOT on PyPI - it
+# lives in this repository, split out so simforge-closed-loop can depend on
+# the frame conversions without importing the 0.54.0 proto stubs (ADR-017).
+# Copying it and installing it first is what the CI workflow already does;
+# the image did not, and the build ended at
+#   ERROR: No matching distribution found for simforge-frames
+COPY packages ./packages
 
 # Plain "." and NOT ".[carla]" - the client is already installed above from
 # the server image, and the extra would pull the 0.9.16 PyPI wheel over it.
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir ./packages/simforge-frames && \
+    pip install --no-cache-dir .
 
 # SensorsimService port
 EXPOSE 50051
