@@ -346,6 +346,21 @@ pytest tests/ -m carla --run-mutating   # also reloads the map (see below)
 tools/gen_protos.sh                     # regenerate vendored stubs
 ```
 
+The vendored protos are pinned at `alpasim_grpc` 0.54.0 while upstream is at
+0.55.0. `tools/proto_equivalence.py` compiles both generations and encodes a
+corpus of render-path messages under each, asserting byte equality for the
+messages they share — proof that the sensorsim seam is unaffected by the bump,
+independent of the new RPCs (`batch_render_rgb`, `get_loaded_scenes`) that
+0.55.0 adds and the `traffic.proto` changes it makes:
+
+```bash
+python tools/proto_equivalence.py --upstream /path/to/alpasim/src/grpc/alpasim_grpc/v0
+ALPASIM_PROTO_DIR=/path/to/alpasim/src/grpc/alpasim_grpc/v0 pytest tests/
+```
+
+Both generations declare the same proto package, so they cannot be imported
+into one interpreter; each encodes in its own subprocess.
+
 Tests marked `carla_mutating` change server state — currently just the
 `load_world` timing check — and are **skipped unless `--run-mutating`** is
 passed, so `-m carla` is idempotent against a server that may be hosting
