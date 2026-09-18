@@ -20,30 +20,18 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from alpasim_carla import frames
+from alpasim_carla.catalog import (
+    BlueprintCatalog,
+    BlueprintUnavailable,
+    default_catalog,
+)
 from alpasim_carla.scenes import ActorDef, SceneManifest
 
 logger = logging.getLogger("alpasim_carla.registry")
 
-# Curated CARLA 0.9.16 blueprint dimensions (length, width, height in meters,
-# approximate stock values) used for nearest-dims selection. Kept small and
-# documented on purpose; scene manifests can override per label via
-# blueprint_overrides.
-VEHICLE_BLUEPRINTS: List[Tuple[str, Tuple[float, float, float]]] = [
-    ("vehicle.mini.cooper_s", (3.80, 1.92, 1.45)),
-    ("vehicle.audi.tt", (4.18, 1.99, 1.39)),
-    ("vehicle.tesla.model3", (4.69, 2.09, 1.49)),
-    ("vehicle.mercedes.coupe_2020", (4.79, 2.04, 1.45)),
-    ("vehicle.audi.etron", (4.90, 2.03, 1.62)),
-    ("vehicle.nissan.patrol_2021", (5.08, 2.18, 1.93)),
-    ("vehicle.ford.ambulance", (6.34, 2.39, 2.55)),
-    ("vehicle.carlamotors.firetruck", (8.49, 2.94, 3.41)),
-]
-TWO_WHEELER_BLUEPRINTS: List[Tuple[str, Tuple[float, float, float]]] = [
-    ("vehicle.diamondback.century", (1.66, 0.42, 1.04)),
-    ("vehicle.yamaha.yzf", (2.19, 0.81, 1.16)),
-]
-WALKER_BLUEPRINT = "walker.pedestrian.0001"
-FALLBACK_BOX_BLUEPRINT = "static.prop.box03"
+# Blueprint candidates and their dimensions now live in alpasim_carla.catalog,
+# loaded from a per-server listing (tools/list_blueprints.py). The curated
+# CARLA 0.9.16 table remains there as catalog.default_catalog().
 
 # Scene-label vocabulary observed in AlpaSim actor_definitions plus common
 # synonyms. Unknown labels fall through to dims-based heuristics, then the
@@ -65,50 +53,89 @@ def _nearest_by_dims(
     return best[0]
 
 
-def choose_blueprint(
-    track_id: str, actor_def: Optional[ActorDef], scene: SceneManifest
-) -> Tuple[str, str]:
-    """Returns (blueprint_id, decision) where decision is a structured note.
+@dataclass
+class BlueprintChoice:
+    """What the ladder picked, and whether it had to give up to pick it.
 
-    Fallback ladder: manifest blueprint_overrides[label] -> category table by
-    label -> dims heuristic -> box prop. Never raises, never skips.
+    ``is_fallback`` is the machine-readable signal Gate G2 checks: a run in
+    which any vehicle or pedestrian resolved to the terminal prop rendered
+    boxes to the driver, so its policy score means nothing.
     """
+
+    blueprint_id: str
+    decision: str
+    is_fallback: bool = False
+
+
+def choose_blueprint(
+    track_id: str,
+    actor_def: Optional[ActorDef],
+    scene: SceneManifest,
+    catalog: Optional[BlueprintCatalog] = None,
+) -> BlueprintChoice:
+    """Pick a blueprint for one tracked object. Never raises, never skips.
+
+    Ladder: manifest ``blueprint_overrides[label]`` -> category table by label
+    -> dims heuristic -> the catalogue's terminal prop. Every rung is
+    validated against ``catalog`` membership, so an id that this server does
+    not have degrades here rather than raising inside ``_spawn``.
+    """
+    catalog = catalog or default_catalog()
     label = (actor_def.label if actor_def else "").strip().lower()
     size = actor_def.size_lwh if actor_def else (4.5, 1.9, 1.6)
+    length, width, height = size
+
+    def degrade(reason: str, wanted: str = "") -> BlueprintChoice:
+        logger.warning(
+            "blueprint_fallback track_id=%s label=%r dims=%.2fx%.2fx%.2f "
+            "wanted=%s -> %s (%s; object NOT dropped)",
+            track_id, label, length, width, height,
+            wanted or "-", catalog.fallback_prop, reason,
+        )
+        tag = f"{reason}[{label or 'no-label'}]"
+        if wanted:
+            tag += f"+missing:{wanted}"
+        return BlueprintChoice(catalog.fallback_prop, tag, is_fallback=True)
+
+    def take(blueprint_id: str, decision: str) -> BlueprintChoice:
+        if not catalog.has(blueprint_id):
+            return degrade("missing_blueprint", wanted=blueprint_id)
+        return BlueprintChoice(blueprint_id, decision)
 
     if label and label in scene.blueprint_overrides:
-        return scene.blueprint_overrides[label], f"override[{label}]"
+        return take(scene.blueprint_overrides[label], f"override[{label}]")
     if label in _VEHICLE_LABELS:
-        return _nearest_by_dims(VEHICLE_BLUEPRINTS, size), f"vehicle[{label}]"
+        if not catalog.vehicles:
+            return degrade("no_vehicle_in_catalog")
+        return take(_nearest_by_dims(catalog.vehicles, size), f"vehicle[{label}]")
     if label in _TWO_WHEELER_LABELS:
-        return _nearest_by_dims(TWO_WHEELER_BLUEPRINTS, size), f"two_wheeler[{label}]"
+        # CARLA 0.10 removed the motorcycle and bicycle categories outright.
+        if not catalog.two_wheelers:
+            return degrade("no_two_wheeler_in_catalog")
+        return take(
+            _nearest_by_dims(catalog.two_wheelers, size), f"two_wheeler[{label}]"
+        )
     if label in _WALKER_LABELS:
-        return WALKER_BLUEPRINT, f"walker[{label}]"
+        return take(catalog.walker, f"walker[{label}]")
 
-    # Unknown / missing label: dims heuristic, then the documented box prop.
-    length, width, height = size
-    if 2.5 < length < 13.0 and 1.3 < width < 3.2:
-        blueprint = _nearest_by_dims(VEHICLE_BLUEPRINTS, size)
+    # Unknown / missing label: dims heuristic, then the terminal prop.
+    if 2.5 < length < 13.0 and 1.3 < width < 3.2 and catalog.vehicles:
+        blueprint = _nearest_by_dims(catalog.vehicles, size)
         logger.warning(
-            "blueprint_fallback track_id=%s label=%r dims=%.2fx%.2fx%.2f -> %s "
+            "blueprint_heuristic track_id=%s label=%r dims=%.2fx%.2fx%.2f -> %s "
             "(car-like dims heuristic; add the label to the scene manifest "
             "blueprint_overrides to silence)",
             track_id, label, length, width, height, blueprint,
         )
-        return blueprint, f"dims_heuristic[{label or 'no-label'}]"
+        return take(blueprint, f"dims_heuristic[{label or 'no-label'}]")
     if length < 1.2 and height > 1.2:
         logger.warning(
-            "blueprint_fallback track_id=%s label=%r dims=%.2fx%.2fx%.2f -> %s "
+            "blueprint_heuristic track_id=%s label=%r dims=%.2fx%.2fx%.2f -> %s "
             "(person-like dims heuristic)",
-            track_id, label, length, width, height, WALKER_BLUEPRINT,
+            track_id, label, length, width, height, catalog.walker,
         )
-        return WALKER_BLUEPRINT, f"dims_heuristic_walker[{label or 'no-label'}]"
-    logger.warning(
-        "blueprint_fallback track_id=%s label=%r dims=%.2fx%.2fx%.2f -> %s "
-        "(documented plain-box fallback; object NOT dropped)",
-        track_id, label, length, width, height, FALLBACK_BOX_BLUEPRINT,
-    )
-    return FALLBACK_BOX_BLUEPRINT, f"box_fallback[{label or 'no-label'}]"
+        return take(catalog.walker, f"dims_heuristic_walker[{label or 'no-label'}]")
+    return degrade("box_fallback")
 
 
 @dataclass
@@ -118,13 +145,21 @@ class ManagedActor:
     blueprint_id: str
     decision: str
     bbox_offset_ue: Tuple[float, float, float]
+    is_fallback: bool = False
 
 
 class ActorRegistry:
-    def __init__(self, carla_module, world, scene: SceneManifest):
+    def __init__(
+        self,
+        carla_module,
+        world,
+        scene: SceneManifest,
+        catalog: Optional[BlueprintCatalog] = None,
+    ):
         self._carla = carla_module
         self._world = world
         self._scene = scene
+        self._catalog = catalog or default_catalog()
         self._actors: Dict[str, ManagedActor] = {}
         self._blueprints = world.get_blueprint_library()
         self._spawn_counter = 0
@@ -146,16 +181,21 @@ class ActorRegistry:
 
     def _spawn(self, track_id: str, transform) -> ManagedActor:
         actor_def = self._scene.actors.get(track_id)
-        blueprint_id, decision = choose_blueprint(track_id, actor_def, self._scene)
+        choice = choose_blueprint(track_id, actor_def, self._scene, self._catalog)
+        blueprint_id, decision = choice.blueprint_id, choice.decision
         try:
             blueprint = self._blueprints.find(blueprint_id)
-        except (IndexError, RuntimeError):
-            logger.warning(
-                "blueprint %s missing in this CARLA build; using %s",
-                blueprint_id, FALLBACK_BOX_BLUEPRINT,
-            )
-            blueprint_id, decision = FALLBACK_BOX_BLUEPRINT, decision + "+missing_bp"
-            blueprint = self._blueprints.find(blueprint_id)
+        except (IndexError, RuntimeError) as exc:
+            # choose_blueprint already validated membership against the
+            # catalogue, so reaching here means the catalogue disagrees with
+            # the live server - a stale listing file. Name it; do not let an
+            # IndexError escape as an opaque gRPC INTERNAL mid-rollout.
+            raise BlueprintUnavailable(
+                f"blueprint {blueprint_id!r} chosen for track_id={track_id} "
+                f"is absent from this CARLA server, but the catalogue "
+                f"({self._catalog.source}) lists it. Regenerate the listing "
+                f"with tools/list_blueprints.py against this server."
+            ) from exc
         if blueprint.has_attribute("role_name"):
             blueprint.set_attribute("role_name", f"alpasim_{track_id}")
 
@@ -195,10 +235,14 @@ class ActorRegistry:
             offset = (bbox.location.x, bbox.location.y, bbox.location.z)
         except (AttributeError, RuntimeError):
             pass  # props may have no bounding_box; pivot == center is fine
-        managed = ManagedActor(track_id, actor, blueprint_id, decision, offset)
+        managed = ManagedActor(
+            track_id, actor, blueprint_id, decision, offset, choice.is_fallback
+        )
+        # Gate G2 greps this line for fallback=true.
         logger.info(
-            "spawned track_id=%s blueprint=%s decision=%s bbox_offset=%s",
-            track_id, blueprint_id, decision, offset,
+            "spawned track_id=%s blueprint=%s decision=%s fallback=%s bbox_offset=%s",
+            track_id, blueprint_id, decision,
+            "true" if choice.is_fallback else "false", offset,
         )
         return managed
 

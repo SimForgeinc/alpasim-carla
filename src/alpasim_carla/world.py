@@ -29,6 +29,8 @@ from PIL import Image
 
 from alpasim_carla import frames
 from alpasim_carla.cameras import resolve_camera
+from alpasim_carla.catalog import BlueprintCatalog, default_catalog
+from alpasim_carla.compat import check_server, map_names_match
 from alpasim_carla.registry import ActorRegistry
 from alpasim_carla.scenes import SceneManifest
 from alpasim_carla.server import RenderBackend, ServerOptions, encode_image
@@ -97,12 +99,16 @@ class CarlaBackend(RenderBackend):
         options: Optional[ServerOptions] = None,
         fixed_delta_seconds: float = 0.05,
         client_timeout_s: float = 60.0,
+        expect_version: Optional[str] = None,
+        catalog: Optional[BlueprintCatalog] = None,
     ) -> None:
         import carla  # lazy: keeps the simulator-free suite carla-free
 
         self._carla = carla
         self._options = options or ServerOptions()
         self._fixed_delta = fixed_delta_seconds
+        self._expect_version = expect_version
+        self._catalog = catalog or default_catalog()
         self._client = carla.Client(host, port)
         self._client.set_timeout(client_timeout_s)
         self._world = None
@@ -110,14 +116,22 @@ class CarlaBackend(RenderBackend):
         self.registry: Optional[ActorRegistry] = None
         self._sensors: Dict[Tuple[int, int, int], _PooledSensor] = {}
         self._lock = threading.Lock()
+        self._weather_supported = True
         version = self._client.get_server_version()
-        logger.info("Connected to CARLA %s at %s:%d", version, host, port)
-        if "0.9.16" not in version:
-            logger.warning(
-                "CARLA server version %s != pinned 0.9.16; proceeding, but the "
-                "pin is what this bridge is tested against",
-                version,
-            )
+        logger.info(
+            "Connected to CARLA %s at %s:%d (blueprint catalogue: %s)",
+            version, host, port, self._catalog.source,
+        )
+        # Hard handshake. A warning here used to let a 0.9.16 client talk to a
+        # 0.10 server and fail much later inside load_world or the blueprint
+        # ladder, where the cause is no longer visible.
+        check_server(
+            server_version=version,
+            server_map="",
+            expected_version=self._expect_version,
+            expected_map=None,
+        )
+        self._server_version = version
 
     # -- scene lifecycle ------------------------------------------------------
 
@@ -132,20 +146,56 @@ class CarlaBackend(RenderBackend):
             self.registry.clear()
 
         world = self._client.get_world()
-        current = world.get_map().name  # e.g. "Carla/Maps/Town10HD_Opt"
-        if not current.endswith(scene.carla_map):
+        # 0.9.x reports "Carla/Maps/Town10HD_Opt"; UE5 reports a content path
+        # like "/Game/Carla/Maps/Town10HD_Opt". Compare exact basenames, not
+        # endswith() - a manifest saying "Belmont" must NOT match a server
+        # serving "Munich_Belmont".
+        current = world.get_map().name
+        if not map_names_match(current, scene.carla_map):
+            logger.info(
+                "Map mismatch (server %r != manifest %r); loading %s",
+                current, scene.carla_map, scene.carla_map,
+            )
             world = self._client.load_world(scene.carla_map)
+            loaded = world.get_map().name
+            check_server(
+                server_version=self._server_version,
+                server_map=loaded,
+                expected_version=None,
+                expected_map=scene.carla_map,
+            )
+            logger.info("Loaded map %r for manifest %r", loaded, scene.carla_map)
         settings = world.get_settings()
         settings.synchronous_mode = True
         settings.fixed_delta_seconds = self._fixed_delta
         settings.no_rendering_mode = False
         world.apply_settings(settings)
-        # Deterministic environment: fixed weather, no dynamic time-of-day.
-        world.set_weather(self._carla.WeatherParameters.ClearNoon)
+        self._apply_weather(world)
         world.tick()
         self._world = world
         self._scene_id = scene.scene_id
-        self.registry = ActorRegistry(self._carla, world, scene)
+        self.registry = ActorRegistry(self._carla, world, scene, self._catalog)
+
+    def _apply_weather(self, world) -> None:
+        """Ask for deterministic weather; tolerate servers that cannot.
+
+        CARLA 0.10 documents weather as unsupported on the release map
+        ("fixed to daylight setting"). Whether set_weather raises there or is
+        a silent no-op is not stated by any CARLA source, so handle both:
+        never let it abort a render, and say once which happened.
+        """
+        if not self._weather_supported:
+            return
+        try:
+            world.set_weather(self._carla.WeatherParameters.ClearNoon)
+        except (RuntimeError, AttributeError, TypeError) as exc:
+            self._weather_supported = False
+            logger.warning(
+                "weather unsupported on this server (%s); continuing with "
+                "whatever the map ships. Renders are still deterministic if "
+                "the server's own lighting is static.",
+                exc,
+            )
 
     def _sensor_for(self, width: int, height: int, fov_deg: float) -> _PooledSensor:
         key = (width, height, int(round(fov_deg * 100)))

@@ -59,13 +59,26 @@ def cmd_serve(args: argparse.Namespace) -> int:
     if args.backend == "synthetic":
         backend = SyntheticBackend()
     else:
+        from alpasim_carla.catalog import default_catalog, load_catalog
         from alpasim_carla.world import CarlaBackend  # imports `carla` lazily
 
+        if args.blueprint_catalog:
+            catalog = load_catalog(args.blueprint_catalog)
+            logger.info(
+                "Blueprint catalogue: %s (%d vehicles, %d two-wheelers, "
+                "walker=%s, fallback=%s)",
+                catalog.source, len(catalog.vehicles), len(catalog.two_wheelers),
+                catalog.walker, catalog.fallback_prop,
+            )
+        else:
+            catalog = default_catalog()
         backend = CarlaBackend(
             host=args.carla_host,
             port=args.carla_port,
             options=options,
             fixed_delta_seconds=args.fixed_delta_seconds,
+            expect_version=args.expect_carla_version or None,
+            catalog=catalog,
         )
 
     server, port = build_server(scenes, backend, options, port=args.port)
@@ -151,6 +164,19 @@ def main(argv=None) -> int:
     serve.add_argument("--carla-map", default="Town10HD_Opt",
                        help="map used for --scene-from-asl scenes")
     serve.add_argument("--fixed-delta-seconds", type=float, default=0.05)
+    serve.add_argument(
+        "--expect-carla-version",
+        default="0.9.16",
+        help="refuse to start unless the server reports this version "
+        "(prefix match, so build suffixes pass). Pass an empty string to "
+        "skip the check.",
+    )
+    serve.add_argument(
+        "--blueprint-catalog",
+        help="blueprint listing for this server, written by "
+        "tools/list_blueprints.py. Defaults to the curated CARLA 0.9.16 "
+        "table, which is wrong on 0.10.",
+    )
     serve.add_argument(
         "--allow-pinhole-approximation",
         action="store_true",

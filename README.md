@@ -277,10 +277,53 @@ stock towns, scene tooling, Docker.
 Roadmap: lidar, distortion post-warp, rolling-shutter simulation, instance
 pooling, CARLA-backed traffic/physics services, Windows.
 
+## Targeting a CARLA server that is not stock 0.9.16
+
+The curated blueprint table in `alpasim_carla.catalog` is CARLA 0.9.16. On
+CARLA 0.10 none of its eight vehicle ids exist verbatim, both two-wheeler
+categories were removed, and several survivors carry a
+`vehicle.ue4.<make>.<model>` id — so every lookup misses and the ladder
+degrades each actor to a prop. List the server first, then serve against the
+listing:
+
+```bash
+python tools/list_blueprints.py --carla-port 3000 --map Town10HD_Opt \
+    --out blueprints_0.10.txt          # also prints the day-one probe
+
+alpasim-carla serve --backend carla --carla-port 3000 \
+    --blueprint-catalog blueprints_0.10.txt \
+    --expect-carla-version 0.10.0 ...
+```
+
+Two behaviours changed with the flags above:
+
+- **`--expect-carla-version` (default `0.9.16`) is a hard gate.** The bridge
+  used to log a warning on a version mismatch and carry on, which let a
+  0.9.16 client talk to a 0.10 server and fail much later inside `load_world`
+  or the blueprint ladder. It now refuses to start. Pass an empty string
+  (`--expect-carla-version ''`) for servers that report a git hash instead of
+  a release — the G3 evidence server reported `fa7751a` and would be rejected
+  by the default.
+- **Map names are compared as exact basenames**, ignoring any path and a
+  trailing `_Opt`. The previous `current.endswith(scene.carla_map)` accepted
+  a manifest name that was merely a suffix of the server's map, so a manifest
+  saying `Belmont` silently matched a server serving `Munich_Belmont`.
+
+`set_weather` is now attempted once and tolerated if it fails: CARLA 0.10
+documents weather as unsupported on the release map, and no CARLA source
+states whether the call raises or is a silent no-op.
+
 ## Development
 
 ```bash
 pip install -e ".[dev]"          # carla not required for the test suite
 pytest tests/ -m "not carla"     # simulator-free suite
+pytest tests/ -m carla           # acceptance suite; needs a live server
 tools/gen_protos.sh              # regenerate vendored stubs
 ```
+
+`tests/test_carla_acceptance.py` holds the day-one checks for a 0.10 server as
+executable acceptance criteria rather than prose. They are configured by
+`CARLA_HOST`, `CARLA_PORT`, `CARLA_MAP`, `CARLA_EXPECT_VERSION` and
+`ALPASIM_BLUEPRINT_CATALOG`, and **none of them has been run against a 0.10
+server yet.**
