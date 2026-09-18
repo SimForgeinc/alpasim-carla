@@ -312,6 +312,12 @@ Two behaviours changed:
   check. A server reporting a git hash rather than a release (the G3 evidence
   server reported `fa7751a`) is refused with a message naming the manifest
   field that would accept it deliberately.
+
+  **The three manifests in `scenes/examples/` declare `'0.9.16'`, so a 0.10
+  server will refuse them. That is by design, not a bug** — those scenes were
+  authored against stock 0.9.16 towns. To use them against a 0.10 server,
+  either change their `carla_version` to the version you are running, or pass
+  `--expect-carla-version ''` to accept whatever the server reports.
 - **Map names are compared as exact basenames**, ignoring any path and a
   trailing `_Opt`. The previous `current.endswith(scene.carla_map)` accepted
   a manifest name that was merely a suffix of the server's map, so a manifest
@@ -333,11 +339,22 @@ states whether the call raises or is a silent no-op.
 ## Development
 
 ```bash
-pip install -e ".[dev]"          # carla not required for the test suite
-pytest tests/ -m "not carla"     # simulator-free suite
-pytest tests/ -m carla           # acceptance suite; needs a live server
-tools/gen_protos.sh              # regenerate vendored stubs
+pip install -e ".[dev]"                 # carla not required for the test suite
+pytest tests/ -m "not carla"            # simulator-free suite
+pytest tests/ -m carla                  # acceptance suite; needs a server
+pytest tests/ -m carla --run-mutating   # also reloads the map (see below)
+tools/gen_protos.sh                     # regenerate vendored stubs
 ```
+
+Tests marked `carla_mutating` change server state — currently just the
+`load_world` timing check — and are **skipped unless `--run-mutating`** is
+passed, so `-m carla` is idempotent against a server that may be hosting
+campaign runs. A marker alone would not achieve this, since `-m carla` selects
+everything carrying the `carla` marker; the flag is what gates them. The
+reload test also refuses to run if the server's entry map is not the target,
+and restores it afterwards, so it can never leave a shared server somewhere
+nobody asked for. It records `load_world_seconds` as a test property, which is
+the only measurement anywhere of how long a UE5 map load actually takes.
 
 `tests/test_carla_acceptance.py` holds the day-one checks for a 0.10 server as
 executable acceptance criteria rather than prose. They are configured by

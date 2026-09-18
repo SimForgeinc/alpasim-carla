@@ -42,4 +42,5 @@ where = ["src"]
 testpaths = ["tests"]
 markers = [
     "carla: requires a reachable CARLA server (excluded from the simulator-free suite)",
+    "carla_mutating: changes server state (load_world); skipped unless --run-mutating",
 ]

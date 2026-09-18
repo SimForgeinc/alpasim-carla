@@ -8,8 +8,9 @@ was written.
 
 All are marked ``carla``, so the simulator-free suite is unaffected::
 
-    pytest tests/ -m "not carla"     # simulator-free, runs anywhere
-    pytest tests/ -m carla           # needs a server
+    pytest tests/ -m "not carla"              # simulator-free, anywhere
+    pytest tests/ -m carla                    # needs a server; read-only
+    pytest tests/ -m carla --run-mutating     # also reloads the map
 
 Configure via environment:
 
@@ -23,7 +24,9 @@ Configure via environment:
                                and the catalogue-agreement test is skipped
 """
 
+import logging
 import os
+import time
 
 import pytest
 
@@ -102,12 +105,45 @@ def test_loaded_map_matches_the_configured_map_name(world):
     )
 
 
-def test_map_name_survives_a_reload_unchanged(client):
+@pytest.mark.carla_mutating
+def test_map_name_survives_a_reload_unchanged(client, record_property):
     """A reload must land on the same normalized name, or _ensure_scene will
-    reload on every single request (30 s or more each on UE5)."""
-    before = client.get_world().get_map().name
+    reload on every single request.
+
+    Also the only place that measures how long load_world takes on this
+    server - a number the Stage B tick budget needs and nobody has yet. Both
+    timings are logged and recorded as test properties.
+
+    Mutating: it loads a map. Restores the entry map on the way out, and
+    refuses to run at all if the entry map is not the target, so it can never
+    leave a shared server on a map nobody asked for.
+    """
+    entry = client.get_world().get_map().name
+    if not map_names_match(entry, MAP):
+        pytest.skip(
+            f"server is on {entry!r}, not the target {MAP!r}; refusing to "
+            f"reload a server that is mid-campaign. Set CARLA_MAP to the "
+            f"current map, or load it first."
+        )
+
+    start = time.perf_counter()
     after = client.load_world(MAP).get_map().name
-    assert normalize_map_name(before) == normalize_map_name(after)
+    load_seconds = time.perf_counter() - start
+
+    restore_start = time.perf_counter()
+    client.load_world(MAP)
+    restore_seconds = time.perf_counter() - restore_start
+
+    record_property("load_world_seconds", round(load_seconds, 3))
+    record_property("restore_load_world_seconds", round(restore_seconds, 3))
+    record_property("map_name_entry", entry)
+    record_property("map_name_after_load", after)
+    logging.getLogger(__name__).warning(
+        "load_world(%s) took %.2fs (restore %.2fs); map name %r -> %r",
+        MAP, load_seconds, restore_seconds, entry, after,
+    )
+
+    assert normalize_map_name(entry) == normalize_map_name(after)
 
 
 # -- blueprint catalogue ------------------------------------------------------
@@ -172,7 +208,7 @@ def test_setting_weather_never_aborts_a_render(world):
 # -- end-to-end ---------------------------------------------------------------
 
 
-def test_render_returns_a_decodable_frame_at_the_requested_size(catalog):
+def test_render_returns_a_decodable_frame_at_the_requested_size(client, catalog):
     """The whole path: connect, load, spawn, tick, capture, encode."""
     import io
 
