@@ -53,11 +53,21 @@ ARG CARLA_IMAGE
 ARG CARLA_PYTHONAPI=/home/carla/PythonAPI
 COPY --from=carla-dist ${CARLA_PYTHONAPI}/ /tmp/carla-pythonapi/
 
+# The tag comes from the INTERPRETER, not from the string the caller typed.
+# Deriving it from ${PYTHON_VERSION} looked equivalent and is not: the
+# official python:*-slim images set ENV PYTHON_VERSION to the full patch
+# version, ENV beats ARG of the same name, and `--build-arg
+# PYTHON_VERSION=3.10` therefore produced
+#   No CARLA wheel for cp31021 (Python 3.10.21)
+# with cp310 sitting in the very list it printed. Asking the interpreter
+# also makes the wheel match the python that will import it, which is the
+# property actually wanted - a caller who types 3.11 against a 3.10 base
+# can no longer install a wheel the runtime cannot load.
 RUN set -eu; \
-    tag="cp$(echo "${PYTHON_VERSION}" | tr -d '.')"; \
+    tag="$(python -c 'import sys; print("cp%d%d" % sys.version_info[:2])')"; \
     wheel="$(find /tmp/carla-pythonapi -name "carla-*-${tag}-*.whl" | head -n1)"; \
     if [ -z "${wheel}" ]; then \
-        echo "No CARLA wheel for ${tag} (Python ${PYTHON_VERSION}) in ${CARLA_IMAGE}." >&2; \
+        echo "No CARLA wheel for ${tag} (the interpreter in this image) in ${CARLA_IMAGE}." >&2; \
         echo "Wheels present in that image:" >&2; \
         find /tmp/carla-pythonapi -name 'carla-*.whl' -exec basename {} \; >&2 || true; \
         echo "Rebuild with --build-arg PYTHON_VERSION=<one of the above>." >&2; \
