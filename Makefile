@@ -26,3 +26,8 @@ protos:
 
 clean:
 	find . -name __pycache__ -type d -prune -exec rm -rf {} +
+
+hooks:
+	@install -m 0755 tools/hooks/pre-commit "$$(git rev-parse --git-dir)/hooks/pre-commit"
+	@echo "installed $$(git rev-parse --git-dir)/hooks/pre-commit"
+	@echo "it runs 'make test' and refuses the commit on failure"

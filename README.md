@@ -339,6 +339,7 @@ states whether the call raises or is a silent no-op.
 ## Development
 
 ```bash
+make hooks                              # INSTALL THIS FIRST - see below
 pip install -e ".[dev]"                 # carla not required for the test suite
 pytest tests/ -m "not carla"            # simulator-free suite
 pytest tests/ -m carla                  # acceptance suite; needs a server
@@ -370,6 +371,37 @@ reload test also refuses to run if the server's entry map is not the target,
 and restores it afterwards, so it can never leave a shared server somewhere
 nobody asked for. It records `load_world_seconds` as a test property, which is
 the only measurement anywhere of how long a UE5 map load actually takes.
+
+### Install the pre-commit hook
+
+`make hooks` installs a hook that runs `make test` and **refuses the commit
+on any failure**. Two commits in this repository's history were made on a
+red suite and had to be corrected by follow-ups; in the second case the
+failing count was printed directly above the commit and went unread. A
+check that reports depends on a reader, so this one blocks.
+
+It is not installed by cloning — `make hooks` is a step, and a clone that
+skipped it is a visible omission rather than a silent one. `--no-verify`
+bypasses it deliberately, and the required status check on `main` is the
+second layer that does not depend on any of this.
+
+Test counts quoted in commit messages come from `make count`, or from
+`.git/LAST_TEST_COUNT` which the hook writes. Never typed.
+
+### The frame conversions live in their own distribution
+
+`packages/simforge-frames/` holds the AlpaSim ↔ Unreal conversions, with
+`numpy` as its only dependency. `alpasim_carla.frames` re-exports it
+verbatim, and a test asserts the re-exports are the **same function
+objects** — without that the shim would drift into a second implementation
+the first time someone fixed a y-flip in one place.
+
+It is separate because `simforge-closed-loop` needs these conversions and
+cannot import this package: `alpasim_carla.scenes` loads the 0.54.0 proto
+stubs, that repo carries 0.55.0, and protobuf's descriptor pool is global.
+See `simforge-closed-loop/docs/adr/ADR-017`.
+
+### Acceptance tests
 
 `tests/test_carla_acceptance.py` holds the day-one checks for a 0.10 server as
 executable acceptance criteria rather than prose. They are configured by
