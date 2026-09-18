@@ -19,6 +19,7 @@ listening and stale frames are drained before each tick.
 from __future__ import annotations
 
 import logging
+import os
 import queue
 import threading
 import time
@@ -117,6 +118,7 @@ class CarlaBackend(RenderBackend):
         self._sensors: Dict[Tuple[int, int, int], _PooledSensor] = {}
         self._lock = threading.Lock()
         self._weather_supported = True
+        self._render_count = 0
         version = self._client.get_server_version()
         logger.info(
             "Connected to CARLA %s at %s:%d (blueprint catalogue: %s)",
@@ -253,6 +255,44 @@ class CarlaBackend(RenderBackend):
                 (image.height, image.width, 4)
             )
             rgb = array[:, :, [2, 1, 0]]
+
+            # WHAT CAME OFF THE CAMERA, before anything encodes it.
+            #
+            # AlpaSim's eval discards a whole trajectory when every pixel of
+            # a frame is <= 10 (eval/scorers/image.py), and a Stage C
+            # rehearsal lost all three rollouts to exactly that. The number
+            # that separates "CARLA rendered nothing" from "the bridge
+            # mangled something real" is the raw mean, and G3 never recorded
+            # it. Logged for the first few renders of a process rather than
+            # every frame: enough to diagnose, not enough to flood.
+            self._render_count += 1
+            if self._render_count <= 3:
+                logger.info(
+                    "render #%d frame=%d requested>=%d mean=%.2f max=%d "
+                    "size=%dx%d at (%.2f, %.2f, %.2f)",
+                    self._render_count,
+                    image.frame,
+                    frame_id,
+                    float(rgb.mean()),
+                    int(rgb.max()),
+                    image.width,
+                    image.height,
+                    location[0],
+                    location[1],
+                    location[2],
+                )
+            # The first frame to disk when asked, so "black" can be looked
+            # at rather than inferred from a mean.
+            dump_dir = os.environ.get("ALPASIM_CARLA_FRAME_DUMP")
+            if dump_dir and self._render_count == 1:
+                try:
+                    os.makedirs(dump_dir, exist_ok=True)
+                    path = os.path.join(dump_dir, "first_frame.png")
+                    Image.fromarray(rgb, "RGB").save(path)
+                    logger.info("wrote %s", path)
+                except OSError as exc:  # never take a rollout down for a dump
+                    logger.warning("could not write the frame dump: %s", exc)
+
             pil_image = Image.fromarray(rgb, "RGB")
             return encode_image(pil_image, request.image_format, request.image_quality)
 
