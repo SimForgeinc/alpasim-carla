@@ -28,6 +28,7 @@ clean:
 	find . -name __pycache__ -type d -prune -exec rm -rf {} +
 
 hooks:
-	@install -m 0755 tools/hooks/pre-commit "$$(git rev-parse --git-dir)/hooks/pre-commit"
-	@echo "installed $$(git rev-parse --git-dir)/hooks/pre-commit"
-	@echo "it runs 'make test' and refuses the commit on failure"
+	@install -m 0755 tools/hooks/pre-commit "$$(git rev-parse --git-common-dir)/hooks/pre-commit"
+	@install -m 0755 tools/hooks/prepare-commit-msg "$$(git rev-parse --git-common-dir)/hooks/prepare-commit-msg"
+	@echo "installed pre-commit       - runs 'make test', refuses on failure"
+	@echo "installed prepare-commit-msg - appends the verified count to the message"

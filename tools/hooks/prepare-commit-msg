@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Append the VERIFIED test count to the commit message.
+#
+# The pre-commit hook writes .git/LAST_TEST_COUNT after a passing run.
+# This appends it, so the number in a message is produced rather than
+# typed. Three messages in this history quoted a count that was wrong -
+# 128 against 125, and 156 against 158 - each time with the correct number
+# printed on screen moments earlier. Writing it down is not the same as
+# reading it; this removes the human step.
+set -uo pipefail
+
+MSG_FILE="$1"
+SOURCE="${2:-}"
+GIT_DIR="$(git rev-parse --git-dir)"
+COUNT_FILE="$GIT_DIR/LAST_TEST_COUNT"
+
+# Not on merges, squashes or amends-with-message-reuse.
+case "$SOURCE" in
+    merge|squash) exit 0 ;;
+esac
+[ -f "$COUNT_FILE" ] || exit 0
+grep -q "^Verified: " "$MSG_FILE" && exit 0
+
+COUNT="$(cat "$COUNT_FILE")"
+# Insert above any trailers so Co-Authored-By stays last.
+if grep -q "^Co-Authored-By: " "$MSG_FILE"; then
+    awk -v line="Verified: $COUNT" '
+        /^Co-Authored-By: / && !done { print line; print ""; done=1 }
+        { print }
+    ' "$MSG_FILE" > "$MSG_FILE.tmp" && mv "$MSG_FILE.tmp" "$MSG_FILE"
+else
+    printf '\nVerified: %s\n' "$COUNT" >> "$MSG_FILE"
+fi
+exit 0

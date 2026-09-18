@@ -1,0 +1,39 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+# This job's name is what `main`'s branch protection should require. A
+# pre-commit hook can be bypassed with --no-verify and is absent from a
+# fresh clone until `make hooks`; a required status check is neither.
+jobs:
+  simulator-free:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e "packages/simforge-frames"
+          pip install -e ".[dev]"
+
+      - name: Suite
+        # Deliberately WITHOUT the carla client wheel installed. The suite
+        # must stay runnable with no simulator; that is gate G1.
+        run: make test
+
+      - name: simforge-frames stays proto-free
+        # Its whole reason for existing - see ADR-017 in
+        # simforge-closed-loop. A proto import here breaks that repo.
+        run: python -m pytest tests/test_frames_packaging.py -q
+
+      - name: Vendored stubs match proto/
+        run: |
+          bash tools/gen_protos.sh
+          git diff --exit-code src/alpasim_carla/_proto \
+            || { echo "Stubs differ from proto/. Run make protos and commit."; exit 1; }

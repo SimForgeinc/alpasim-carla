@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Refuse a commit whose suite does not pass.
+#
+# Installed by `make hooks`. Two commits in this repository's history were
+# made on a red suite and had to be corrected by follow-up commits; in the
+# second case the failing count was printed directly above the commit and
+# went unread. A check that reports depends on a reader. This one blocks.
+#
+# Bypass with `git commit --no-verify` when you genuinely mean to - and note
+# that the required status check on `main` will still stop it merging, which
+# is the second layer and the one that does not depend on a local clone
+# having run `make hooks` at all.
+set -uo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+# A count is only reproducible if the tree that produced it is the tree that
+# gets committed. Commit 4d11afe is titled "blocking pre-commit hook and a CI
+# job for main to require" and staged neither: this hook and
+# .github/workflows/ci.yml were written, described and left untracked, so the
+# Makefile target that installs them pointed at files a fresh clone did not
+# have. Untracked source refuses the commit rather than being counted into it.
+UNTRACKED="$(git status --porcelain -- src tests tools packages configs_pkg \
+             proto scenes docs .github | sed -n 's/^?? //p')"
+if [ -n "$UNTRACKED" ]; then
+    printf '%s\n' "$UNTRACKED" >&2
+    cat >&2 <<'MSG'
+
+pre-commit: untracked files would make the verified count unreproducible;
+add or ignore them.
+MSG
+    exit 1
+fi
+
+# Prefer a venv in the repo, then one in a sibling checkout, then the PATH.
+for candidate in \
+    "$ROOT/.venv-g1/bin/python" \
+    "$ROOT/.venv/bin/python" \
+    "$ROOT/../alpasim-carla/.venv-g1/bin/python" \
+    "$(command -v python3 || true)"
+do
+    if [ -x "$candidate" ]; then
+        PYTHON="$candidate"
+        break
+    fi
+done
+
+if [ -z "${PYTHON:-}" ]; then
+    echo "pre-commit: no python found; install one or commit with --no-verify" >&2
+    exit 1
+fi
+
+echo "pre-commit: running the suite with $PYTHON"
+OUTPUT="$(make test PYTHON="$PYTHON" 2>&1)"
+STATUS=$?
+
+if [ $STATUS -ne 0 ]; then
+    echo "$OUTPUT" | tail -30 >&2
+    cat >&2 <<'MSG'
+
+pre-commit: the suite failed, so the commit is refused.
+
+Fix it, or use --no-verify if you mean to commit known-red work. The
+required status check on main will still stop it merging.
+MSG
+    exit 1
+fi
+
+COUNT="$(printf '%s\n' "$OUTPUT" | tail -1)"
+echo "pre-commit: $COUNT"
+# Written where a commit message can pick it up rather than being typed.
+# --git-dir, not $ROOT/.git: in a worktree that path is a file, so the write
+# failed with "Not a directory" and prepare-commit-msg appended nothing.
+printf '%s\n' "$COUNT" > "$(git rev-parse --git-dir)/LAST_TEST_COUNT"
+exit 0
