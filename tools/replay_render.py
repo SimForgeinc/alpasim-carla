@@ -34,6 +34,8 @@ from PIL import Image
 
 from alpasim_carla._proto.alpasim_grpc.v0 import sensorsim_pb2, sensorsim_pb2_grpc
 from alpasim_carla.aslio import read_sensorsim_log
+from alpasim_carla.catalog import default_catalog, load_catalog
+from alpasim_carla.registry import audit_scene_blueprints
 from alpasim_carla.scenes import manifest_from_asl
 from alpasim_carla.server import ServerOptions, build_server
 
@@ -70,6 +72,16 @@ def main() -> int:
     parser.add_argument("--max-requests", type=int, default=0, help="0 = all")
     parser.add_argument("--repeat-check-every", type=int, default=50)
     parser.add_argument("--allow-pinhole-approximation", action="store_true")
+    parser.add_argument(
+        "--blueprint-catalog",
+        help="blueprint listing from tools/list_blueprints.py; defaults to "
+        "the curated CARLA 0.9.16 table, which is wrong on 0.10",
+    )
+    parser.add_argument(
+        "--expect-carla-version",
+        default="",
+        help="override the carla_version declared by the scene manifest",
+    )
     parser.add_argument("--anchor", type=float, nargs=3, default=(0.0, 0.0, 0.0))
     args = parser.parse_args()
 
@@ -80,7 +92,18 @@ def main() -> int:
         args.asl, carla_map=args.carla_map, anchor_translation=tuple(args.anchor)
     )
     options = ServerOptions(allow_pinhole_approximation=args.allow_pinhole_approximation)
-    backend = CarlaBackend(host=args.carla_host, port=args.carla_port, options=options)
+    catalog = load_catalog(args.blueprint_catalog) if args.blueprint_catalog else default_catalog()
+    backend = CarlaBackend(
+        host=args.carla_host,
+        port=args.carla_port,
+        options=options,
+        expect_version=args.expect_carla_version or manifest.carla_version,
+        catalog=catalog,
+    )
+    # Gate G2: resolve every gated actor through the ladder BEFORE the
+    # rollout. A boxed car, pedestrian or cyclist is visible to the driver,
+    # so the run's policy score would be meaningless.
+    fallback_actors = audit_scene_blueprints(manifest, catalog)
     server, port = build_server(
         {manifest.scene_id: manifest}, backend, options, port=0, host="127.0.0.1"
     )
@@ -99,11 +122,20 @@ def main() -> int:
         "carla_map": args.carla_map,
         "total_requests": len(requests),
         "checks": {"decode": 0, "resolution": 0, "actor_count": 0, "repeat": 0},
+        "blueprint_catalog": catalog.source,
+        "fallback_actors": fallback_actors,
         "failures": [],
         "per_camera": {},
         "approximation": args.allow_pinhole_approximation,
     }
     failures = metrics["failures"]
+    if fallback_actors:
+        failures.append(
+            "blueprint_fallback: gated actors would render as "
+            f"{catalog.fallback_prop}: {fallback_actors}. Regenerate the "
+            "listing with tools/list_blueprints.py, or filter these actors "
+            "out of the scene package."
+        )
     latencies = []
     samples = []
     sample_every = max(1, len(requests) // 16)

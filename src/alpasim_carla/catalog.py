@@ -105,21 +105,22 @@ def parse_catalog(text: str, source: str = "<string>") -> BlueprintCatalog:
                 f"(expected vehicle, two_wheeler, walker or prop)"
             )
 
-    if not vehicles:
-        raise BlueprintUnavailable(
-            f"{source} lists no vehicle blueprint; the ladder cannot place a "
-            f"car-like actor."
-        )
-    if not walkers:
-        raise BlueprintUnavailable(
-            f"{source} lists no walker blueprint; the ladder cannot place a "
-            f"pedestrian."
-        )
-    if not props:
-        raise BlueprintUnavailable(
-            f"{source} lists no prop blueprint; the ladder has no terminal "
-            f"fallback and an unmatched actor would raise mid-rollout."
-        )
+    for missing, what in (
+        (not vehicles, "vehicle blueprint; the ladder cannot place a car-like actor"),
+        (not walkers, "walker blueprint; the ladder cannot place a pedestrian"),
+        (
+            not props,
+            "prop blueprint; the ladder has no terminal fallback and an "
+            "unmatched actor would raise mid-rollout",
+        ),
+    ):
+        if missing:
+            raise BlueprintUnavailable(
+                f"{source} lists no {what}. Regenerate the listing against "
+                f"the server you are targeting:\n"
+                f"    python tools/list_blueprints.py --carla-host HOST "
+                f"--carla-port PORT --out {source}"
+            )
 
     fallback = PREFERRED_PROP if PREFERRED_PROP in props else props[0]
     return BlueprintCatalog(

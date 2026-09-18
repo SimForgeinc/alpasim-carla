@@ -16,7 +16,8 @@ Configure via environment:
     CARLA_HOST                 default 127.0.0.1
     CARLA_PORT                 default 2000
     CARLA_MAP                  default Town10HD_Opt - the map to expect
-    CARLA_EXPECT_VERSION       default 0.10.0 - prefix match
+    CARLA_EXPECT_VERSION       overrides the manifests' carla_version;
+                               unset means the manifests decide
     ALPASIM_BLUEPRINT_CATALOG  listing from tools/list_blueprints.py;
                                when unset the curated 0.9.16 table is used
                                and the catalogue-agreement test is skipped
@@ -27,8 +28,13 @@ import os
 import pytest
 
 from alpasim_carla.catalog import default_catalog, load_catalog
-from alpasim_carla.compat import check_server, map_names_match, normalize_map_name
-from alpasim_carla.registry import choose_blueprint
+from alpasim_carla.compat import (
+    check_server,
+    map_names_match,
+    normalize_map_name,
+    resolve_expected_version,
+)
+from alpasim_carla.registry import audit_scene_blueprints
 from alpasim_carla.scenes import load_scene_dir
 
 pytestmark = pytest.mark.carla
@@ -36,7 +42,7 @@ pytestmark = pytest.mark.carla
 HOST = os.environ.get("CARLA_HOST", "127.0.0.1")
 PORT = int(os.environ.get("CARLA_PORT", "2000"))
 MAP = os.environ.get("CARLA_MAP", "Town10HD_Opt")
-EXPECT_VERSION = os.environ.get("CARLA_EXPECT_VERSION", "0.10.0")
+EXPECT_VERSION = os.environ.get("CARLA_EXPECT_VERSION", "")
 CATALOG_PATH = os.environ.get("ALPASIM_BLUEPRINT_CATALOG", "")
 
 
@@ -68,11 +74,20 @@ def catalog():
 # -- handshake ----------------------------------------------------------------
 
 
-def test_server_reports_the_version_this_branch_targets(client):
+def test_server_reports_the_version_the_manifests_declare(client):
+    """EXPECT_VERSION overrides; otherwise the shipped manifests decide."""
+    expected = EXPECT_VERSION or resolve_expected_version(
+        load_scene_dir("scenes/examples"), flag=None
+    )
+    if expected is None:
+        pytest.skip(
+            "no carla_version in scenes/examples and CARLA_EXPECT_VERSION "
+            "unset; nothing to check"
+        )
     check_server(
         server_version=client.get_server_version(),
         server_map="",
-        expected_version=EXPECT_VERSION,
+        expected_version=expected,
         expected_map=None,
     )
 
@@ -129,18 +144,14 @@ def test_the_catalogue_has_vehicles_and_a_walker(catalog):
 
 @pytest.mark.parametrize("scenes_dir", ["scenes/examples", "scenes/g3"])
 def test_no_shipped_scene_actor_degrades_to_the_prop(scenes_dir, catalog):
-    """Gate G2's check: a run where NPCs became boxes scores nothing."""
-    degraded = []
+    """Gate G2's check, widened to cyclists and motorcycles: a run where a
+    gated actor became a box scores nothing."""
+    degraded = {}
     for scene in load_scene_dir(scenes_dir).values():
-        for track_id, actor_def in scene.actors.items():
-            choice = choose_blueprint(track_id, actor_def, scene, catalog)
-            if choice.is_fallback:
-                degraded.append(
-                    f"{scene.scene_id}/{track_id} label={actor_def.label!r} "
-                    f"-> {choice.blueprint_id} ({choice.decision})"
-                )
-    assert not degraded, "actors degraded to the terminal prop:\n" + "\n".join(
-        degraded
+        for track_id, label in audit_scene_blueprints(scene, catalog).items():
+            degraded[f"{scene.scene_id}/{track_id}"] = label
+    assert not degraded, (
+        f"gated actors would render as {catalog.fallback_prop}: {degraded}"
     )
 
 
@@ -179,7 +190,7 @@ def test_render_returns_a_decodable_frame_at_the_requested_size(catalog):
         host=HOST,
         port=PORT,
         options=ServerOptions(allow_pinhole_approximation=True),
-        expect_version=EXPECT_VERSION or None,
+        expect_version=EXPECT_VERSION or scene.carla_version,
         catalog=catalog,
     )
     try:

@@ -114,3 +114,29 @@ def test_default_catalog_is_the_curated_0916_table():
 
 def test_default_catalog_reports_unknown_ids_as_absent():
     assert not default_catalog().has("vehicle.lincoln.mkz")
+
+
+def test_load_failure_names_the_file_and_the_command_that_rebuilds_it(tmp_path):
+    """Whoever hits this on day one must not have to read catalog.py to find
+    out what to run."""
+    path = tmp_path / "blueprints_0.10.txt"
+    path.write_text(
+        "\n".join(
+            line for line in LISTING.splitlines() if not line.startswith("static.")
+        )
+    )
+    with pytest.raises(BlueprintUnavailable) as exc:
+        load_catalog(str(path))
+    message = str(exc.value)
+    assert "blueprints_0.10.txt" in message
+    assert "tools/list_blueprints.py" in message
+
+
+def test_every_load_time_failure_carries_the_regeneration_command():
+    for dropped in ("vehicle.", "walker.", "static."):
+        listing = "\n".join(
+            line for line in LISTING.splitlines() if not line.startswith(dropped)
+        )
+        with pytest.raises(BlueprintUnavailable) as exc:
+            parse_catalog(listing, source="blueprints_0.10.txt")
+        assert "tools/list_blueprints.py" in str(exc.value)

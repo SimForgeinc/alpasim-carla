@@ -13,6 +13,7 @@ from alpasim_carla.compat import (
     check_server,
     map_names_match,
     normalize_map_name,
+    resolve_expected_version,
 )
 
 
@@ -116,3 +117,81 @@ def test_version_compare_is_a_prefix_match_so_build_suffixes_pass():
         expected_version="0.10.0",
         expected_map="Town10HD_Opt",
     )
+
+
+# -- where the expected version comes from ------------------------------------
+
+
+class _Manifest:
+    """Stand-in for SceneManifest: resolve_expected_version only reads
+    scene_id and carla_version."""
+
+    def __init__(self, scene_id, carla_version=None):
+        self.scene_id = scene_id
+        self.carla_version = carla_version
+
+
+def test_flag_overrides_the_manifest():
+    scenes = {"a": _Manifest("a", "0.9.16")}
+    assert resolve_expected_version(scenes, flag="0.10.0") == "0.10.0"
+
+
+def test_manifest_supplies_the_version_when_no_flag_is_given():
+    scenes = {"a": _Manifest("a", "0.10.0")}
+    assert resolve_expected_version(scenes, flag=None) == "0.10.0"
+
+
+def test_empty_flag_explicitly_disables_the_check():
+    scenes = {"a": _Manifest("a", "0.10.0")}
+    assert resolve_expected_version(scenes, flag="") is None
+
+
+def test_no_flag_and_no_manifest_field_means_no_check():
+    scenes = {"a": _Manifest("a", None)}
+    assert resolve_expected_version(scenes, flag=None) is None
+
+
+def test_manifests_agreeing_on_a_version_resolve_to_it():
+    scenes = {"a": _Manifest("a", "0.10.0"), "b": _Manifest("b", "0.10.0")}
+    assert resolve_expected_version(scenes, flag=None) == "0.10.0"
+
+
+def test_manifests_disagreeing_is_an_error_naming_both_scenes():
+    scenes = {"a": _Manifest("a", "0.9.16"), "b": _Manifest("b", "0.10.0")}
+    with pytest.raises(ServerMismatch) as exc:
+        resolve_expected_version(scenes, flag=None)
+    assert "a" in str(exc.value) and "b" in str(exc.value)
+
+
+def test_a_manifest_without_the_field_does_not_veto_one_that_has_it():
+    scenes = {"a": _Manifest("a", None), "b": _Manifest("b", "0.10.0")}
+    assert resolve_expected_version(scenes, flag=None) == "0.10.0"
+
+
+# -- git-hash servers get a specific message ----------------------------------
+
+
+def test_a_git_hash_server_is_rejected_with_manifest_advice():
+    """The G3 evidence server reported 'fa7751a'. Refusing it is correct; the
+    message must say how to accept it deliberately."""
+    with pytest.raises(ServerMismatch) as exc:
+        check_server(
+            server_version="fa7751a",
+            server_map="Town10HD_Opt",
+            expected_version="0.10.0",
+            expected_map="Town10HD_Opt",
+        )
+    message = str(exc.value)
+    assert "git hash" in message
+    assert "carla_version" in message
+
+
+def test_a_release_mismatch_does_not_mention_git_hashes():
+    with pytest.raises(ServerMismatch) as exc:
+        check_server(
+            server_version="0.9.16",
+            server_map="Town10HD_Opt",
+            expected_version="0.10.0",
+            expected_map="Town10HD_Opt",
+        )
+    assert "git hash" not in str(exc.value)

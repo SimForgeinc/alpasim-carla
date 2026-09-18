@@ -72,12 +72,24 @@ def cmd_serve(args: argparse.Namespace) -> int:
             )
         else:
             catalog = default_catalog()
+        from alpasim_carla.compat import resolve_expected_version
+
+        expect_version = resolve_expected_version(
+            scenes, flag=args.expect_carla_version
+        )
+        logger.info(
+            "Expecting CARLA %s (%s)",
+            expect_version or "<any>",
+            "--expect-carla-version"
+            if args.expect_carla_version is not None
+            else "from scene manifests",
+        )
         backend = CarlaBackend(
             host=args.carla_host,
             port=args.carla_port,
             options=options,
             fixed_delta_seconds=args.fixed_delta_seconds,
-            expect_version=args.expect_carla_version or None,
+            expect_version=expect_version,
             catalog=catalog,
         )
 
@@ -166,10 +178,11 @@ def main(argv=None) -> int:
     serve.add_argument("--fixed-delta-seconds", type=float, default=0.05)
     serve.add_argument(
         "--expect-carla-version",
-        default="0.9.16",
-        help="refuse to start unless the server reports this version "
-        "(prefix match, so build suffixes pass). Pass an empty string to "
-        "skip the check.",
+        default=None,
+        help="override the carla_version declared by the scene manifests. "
+        "Prefix match, so build suffixes pass. Pass an empty string to skip "
+        "the check entirely. Default: use the manifests, and check nothing "
+        "if none of them declares a version.",
     )
     serve.add_argument(
         "--blueprint-catalog",

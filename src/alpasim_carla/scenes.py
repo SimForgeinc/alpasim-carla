@@ -56,6 +56,10 @@ class SceneManifest:
     ground_z: Optional[float] = None
     blueprint_overrides: Dict[str, str] = field(default_factory=dict)  # label -> blueprint
     description: str = ""
+    # CARLA build this scene was recorded against ("0.9.16", "0.10.0", or a
+    # git hash for a custom build). None means "do not check". The bridge
+    # refuses to start against a server that does not match.
+    carla_version: Optional[str] = None
 
     def available_cameras_return(self) -> sensorsim_pb2.AvailableCamerasReturn:
         ret = sensorsim_pb2.AvailableCamerasReturn()
@@ -184,6 +188,14 @@ def manifest_to_yaml(manifest: SceneManifest) -> str:
             for a in manifest.actors.values()
         ],
     }
+    if manifest.carla_version:
+        # Insert after carla_map so the two server-facing keys sit together.
+        ordered = {}
+        for key, value in data.items():
+            ordered[key] = value
+            if key == "carla_map":
+                ordered["carla_version"] = manifest.carla_version
+        data = ordered
     return yaml.safe_dump(data, sort_keys=False)
 
 
@@ -198,6 +210,7 @@ def manifest_from_yaml(text: str) -> SceneManifest:
         ground_z=data.get("ground_z"),
         blueprint_overrides=dict(data.get("blueprint_overrides") or {}),
         description=data.get("description", ""),
+        carla_version=data.get("carla_version"),
     )
     for cam in data.get("cameras", []):
         spec = _spec_from_yaml(cam["intrinsics"])

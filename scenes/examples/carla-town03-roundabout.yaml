@@ -1,5 +1,6 @@
 scene_id: carla-town03-roundabout
 carla_map: Town03
+carla_version: '0.9.16'
 description: Mid-size town with a central roundabout.
 local_to_world:
   translation:

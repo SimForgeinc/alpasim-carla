@@ -138,6 +138,34 @@ def choose_blueprint(
     return degrade("box_fallback")
 
 
+# Labels the scene is held to. An actor carrying one of these must resolve to
+# a real blueprint: a boxed car, pedestrian or cyclist is visible to the
+# driver and invalidates the run's policy score. Unlabelled actors are not
+# gated - a tiny unlabelled object legitimately becomes a prop.
+GATED_LABELS = _VEHICLE_LABELS | _TWO_WHEELER_LABELS | _WALKER_LABELS
+
+
+def audit_scene_blueprints(
+    scene: SceneManifest, catalog: Optional[BlueprintCatalog] = None
+) -> Dict[str, str]:
+    """Return ``{track_id: label}`` for gated actors that would render as props.
+
+    Pure: resolves every actor in the manifest through the same ladder the
+    registry uses, without touching CARLA. Gate G2 runs this before a rollout
+    and records the result, so a run that passed with two boxed cyclists is
+    visible in the evidence instead of being found in the video.
+    """
+    catalog = catalog or default_catalog()
+    degraded: Dict[str, str] = {}
+    for track_id, actor_def in scene.actors.items():
+        label = (actor_def.label or "").strip().lower()
+        if label not in GATED_LABELS:
+            continue
+        if choose_blueprint(track_id, actor_def, scene, catalog).is_fallback:
+            degraded[track_id] = label
+    return degraded
+
+
 @dataclass
 class ManagedActor:
     track_id: str
@@ -146,6 +174,7 @@ class ManagedActor:
     decision: str
     bbox_offset_ue: Tuple[float, float, float]
     is_fallback: bool = False
+    label: str = ""
 
 
 class ActorRegistry:
@@ -167,6 +196,17 @@ class ActorRegistry:
     @property
     def actor_count(self) -> int:
         return len(self._actors)
+
+    @property
+    def fallback_actors(self) -> Dict[str, str]:
+        """``{track_id: label}`` for actors that spawned as the terminal
+        prop. Recorded per run so a pass with boxed actors is visible in
+        the evidence rather than found later in the video."""
+        return {
+            track_id: managed.label
+            for track_id, managed in self._actors.items()
+            if managed.is_fallback
+        }
 
     def transforms(self) -> Dict[str, Tuple[Tuple[float, float, float], Tuple[float, float, float]]]:
         """track_id -> ((x,y,z), (pitch,yaw,roll)) as reported by CARLA."""
@@ -236,7 +276,8 @@ class ActorRegistry:
         except (AttributeError, RuntimeError):
             pass  # props may have no bounding_box; pivot == center is fine
         managed = ManagedActor(
-            track_id, actor, blueprint_id, decision, offset, choice.is_fallback
+            track_id, actor, blueprint_id, decision, offset,
+            choice.is_fallback, (actor_def.label if actor_def else ""),
         )
         # Gate G2 greps this line for fallback=true.
         logger.info(

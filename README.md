@@ -291,23 +291,33 @@ python tools/list_blueprints.py --carla-port 3000 --map Town10HD_Opt \
     --out blueprints_0.10.txt          # also prints the day-one probe
 
 alpasim-carla serve --backend carla --carla-port 3000 \
-    --blueprint-catalog blueprints_0.10.txt \
-    --expect-carla-version 0.10.0 ...
+    --blueprint-catalog blueprints_0.10.txt ...
 ```
 
-Two behaviours changed with the flags above:
+Two behaviours changed:
 
-- **`--expect-carla-version` (default `0.9.16`) is a hard gate.** The bridge
-  used to log a warning on a version mismatch and carry on, which let a
-  0.9.16 client talk to a 0.10 server and fail much later inside `load_world`
-  or the blueprint ladder. It now refuses to start. Pass an empty string
-  (`--expect-carla-version ''`) for servers that report a git hash instead of
-  a release — the G3 evidence server reported `fa7751a` and would be rejected
-  by the default.
+- **The version check is a hard gate, and the scene manifest decides what it
+  demands.** Each manifest declares `carla_version:` — the shipped 0.9.16
+  examples say `'0.9.16'`, a Belmont manifest says `'0.10.0'` — and the
+  bridge refuses to start against a server that does not match. Manifests
+  that disagree with each other are an error: one process serves one server.
+  `--expect-carla-version` overrides them all; an empty string skips the
+  check. A server reporting a git hash rather than a release (the G3 evidence
+  server reported `fa7751a`) is refused with a message naming the manifest
+  field that would accept it deliberately.
 - **Map names are compared as exact basenames**, ignoring any path and a
   trailing `_Opt`. The previous `current.endswith(scene.carla_map)` accepted
   a manifest name that was merely a suffix of the server's map, so a manifest
   saying `Belmont` silently matched a server serving `Munich_Belmont`.
+
+Gate G2 now audits the ladder before a rollout: `audit_scene_blueprints`
+resolves every actor whose label is a vehicle, pedestrian or two-wheeler
+synonym and fails the gate if any would render as the terminal prop. The
+result is recorded as `fallback_actors` in the run metrics, so a run that
+passed with boxed actors is visible in the evidence rather than found
+later in the video. CARLA 0.10 removed the motorcycle and bicycle
+categories outright, so a scene containing cyclists will fail this gate
+on 0.10 until they are filtered out of the scene package.
 
 `set_weather` is now attempted once and tolerated if it fails: CARLA 0.10
 documents weather as unsupported on the release map, and no CARLA source

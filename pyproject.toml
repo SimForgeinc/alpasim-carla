@@ -9,10 +9,12 @@ description = "CARLA-backed renderer (SensorsimService) for NVIDIA AlpaSim: poin
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "SimForge" }]
-# CARLA 0.9.16 ships CPython 3.10 client wheels; AlpaSim itself needs 3.12.
-# The gRPC boundary means this bridge runs as its own 3.10 process, so the
+# CARLA 0.9.16 ships CPython 3.10-3.12 client wheels and CARLA 0.10 ships
+# 3.8-3.12, so 3.12 serves both the client and AlpaSim 0.134 (3.11-3.12)
+# with one interpreter. 3.10 stays supported for existing 0.9.16 twins.
+# The gRPC boundary means this bridge runs as its own process, so the
 # two never share an environment.
-requires-python = ">=3.10,<3.11"
+requires-python = ">=3.10,<3.13"
 dependencies = [
     "grpcio>=1.60",
     "protobuf>=4.25,<5", # matches the alpasim_grpc pin at alpasim commit a1f05bb
@@ -24,6 +26,9 @@ dependencies = [
 [project.optional-dependencies]
 # Kept optional so the simulator-free test suite (gate G1) installs and runs
 # in environments without the CARLA client wheel.
+# PyPI has no carla 0.10.0 - the 0.10 client ships only inside the release
+# package. This extra is for stock 0.9.16 twins; for 0.10 the docker build
+# copies the wheel out of the server image instead.
 carla = ["carla==0.9.16"]
 dev = ["pytest>=7", "grpcio-tools==1.62.3"]
 
