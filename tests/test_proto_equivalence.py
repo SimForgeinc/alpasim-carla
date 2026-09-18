@@ -11,6 +11,12 @@ scene_id in traffic.proto. Only sensorsim and logging touch this bridge. If
 the messages both generations share encode to identical bytes, a 0.55.0
 client and this repo's 0.54.0 server agree on the wire and the bump cannot
 break rendering - which is the only part Stage C depends on.
+
+The corpus deliberately excludes controller.proto (VDCService) and
+traffic.proto: nothing in Stage C calls them, and traffic.proto is
+known to have changed incompatibly (get_available_scenes and
+supported_map_ids removed, map_id renamed to scene_id). A pass here
+is not a statement about those two services.
 """
 
 import os

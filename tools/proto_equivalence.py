@@ -18,6 +18,15 @@ so they cannot be imported into one interpreter - protobuf's global descriptor
 pool rejects the second registration. Each side therefore encodes in its own
 subprocess and only hex digests cross the boundary.
 
+What this does NOT cover, by construction: the corpus contains only messages
+this bridge touches, so ``controller.proto`` (``VDCService``) and
+``traffic.proto`` are never encoded. traffic.proto in particular is known to
+have changed incompatibly - 0.55.0 removes the ``get_available_scenes`` RPC
+and the ``supported_map_ids`` field, and renames ``map_id`` to ``scene_id``.
+A PASS here means "the sensorsim and logging seams are unaffected", not "the
+bump is safe everywhere". Whoever writes traffic-scripted must re-check
+traffic.proto against 0.55.0 directly.
+
 Usage:
 
     python tools/proto_equivalence.py \\
