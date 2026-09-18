@@ -1,5 +1,11 @@
 scene_id: clipgt-01d503d4-449b-46fc-8d78-9085e70d3554
 carla_map: Town10HD_Opt
+# The server this scene was anchored against. compat.py's handshake is an
+# EXACT compare and scenes.py:191 only runs it when this key is present, so
+# omitting it did not relax the check - it skipped it, on the one scene
+# Stage C actually loads while all three scenes/examples/ manifests, which
+# only the bridge's own render tests use, declared theirs.
+carla_version: "0.9.16"
 description: 'G3 closed-loop scene: OSS scene clipgt-01d503d4 (runtime-side session
   data comes from AlpaSim scene catalog) rendered in CARLA Town10HD_Opt; recorded
   ego start anchored onto a road spawn point.'
