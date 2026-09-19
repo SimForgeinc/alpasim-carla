@@ -50,8 +50,10 @@ Consumed:
   teleported so its bounding-box center lands exactly there (CARLA pivot
   offset compensated via `actor.bounding_box.location`). Physics and
   autopilot are OFF for all bridge-managed actors — AlpaSim owns motion.
-  Objects whose label/dims have no blueprint mapping get the documented box
-  prop fallback + a structured warning; objects are never silently dropped.
+  Objects whose label/dims have no blueprint mapping get the terminal prop
+  the listing declares in its `fallback_blueprint:` field (recorded per
+  image, never a code default — ADR-BRIDGE-001) + a structured warning;
+  objects are never silently dropped.
 * `image_format` — PNG(1) and JPEG(2) supported (matching AlpaSim's own
   support note in the proto); anything else → **INVALID_ARGUMENT**.
   `image_quality` — JPEG quality (real traffic uses 95).

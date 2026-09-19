@@ -16,6 +16,7 @@ from alpasim_carla.scenes import ActorDef, SceneManifest
 CATALOG_010 = parse_catalog(
     "\n".join(
         [
+            "# fallback_blueprint: static.prop.box03",
             "vehicle.mini.cooper\tvehicle\t3.80\t1.92\t1.45",
             "vehicle.ue4.audi.tt\tvehicle\t4.18\t1.99\t1.39",
             "vehicle.lincoln.mkz\tvehicle\t4.90\t2.13\t1.51",

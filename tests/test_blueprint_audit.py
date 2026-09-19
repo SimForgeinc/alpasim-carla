@@ -16,6 +16,7 @@ from alpasim_carla.scenes import ActorDef, SceneManifest
 CATALOG_010 = parse_catalog(
     "\n".join(
         [
+            "# fallback_blueprint: static.prop.box03",
             "vehicle.lincoln.mkz\tvehicle\t4.90\t2.13\t1.51",
             "walker.pedestrian.0001\twalker\t0\t0\t0",
             "static.prop.box03\tprop\t0\t0\t0",
@@ -27,6 +28,7 @@ CATALOG_010 = parse_catalog(
 CATALOG_WITH_TWO_WHEELERS = parse_catalog(
     "\n".join(
         [
+            "# fallback_blueprint: static.prop.box03",
             "vehicle.lincoln.mkz\tvehicle\t4.90\t2.13\t1.51",
             "vehicle.diamondback.century\ttwo_wheeler\t1.66\t0.42\t1.04",
             "walker.pedestrian.0001\twalker\t0\t0\t0",

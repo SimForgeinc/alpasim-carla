@@ -18,6 +18,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
+          # 3.12 on purpose, and NOT the 3.10 that docker/Dockerfile pins:
+          # this job installs no CARLA client wheel (that is gate G1), so it
+          # is free to run on the upper end of requires-python and prove the
+          # simulator-free suite is not accidentally 3.10-only. The wheel is
+          # what forces 3.10, and it is only in the image.
           python-version: "3.12"
 
       - name: Install

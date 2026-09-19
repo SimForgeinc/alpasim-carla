@@ -9,11 +9,18 @@ description = "CARLA-backed renderer (SensorsimService) for NVIDIA AlpaSim: poin
 readme = "README.md"
 license = { text = "Apache-2.0" }
 authors = [{ name = "SimForge" }]
-# CARLA 0.9.16 ships CPython 3.10-3.12 client wheels and CARLA 0.10 ships
-# 3.8-3.12, so 3.12 serves both the client and AlpaSim 0.134 (3.11-3.12)
-# with one interpreter. 3.10 stays supported for existing 0.9.16 twins.
-# The gRPC boundary means this bridge runs as its own process, so the
-# two never share an environment.
+# The range is >=3.10 because 3.10 is the only interpreter that serves every
+# image we run against. The release notes are not the authority here - the
+# IMAGE is: the Belmont build
+# (ghcr.io/simforgeinc/carla-rfs-munich-belmont@sha256:d1b16b06...) ships
+# exactly one client wheel, carla-0.10.0-cp310-cp310-linux_x86_64.whl, so a
+# 3.12 bridge cannot talk to it at all, whatever "0.10 ships 3.8-3.12" says.
+# Stock 0.9.16 ships cp310-cp312, so 3.10 serves both. docker/Dockerfile
+# pins PYTHON_VERSION=3.10 for the same measured reason.
+# The simulator-free suite (gate G1) installs no client wheel and therefore
+# still runs on any interpreter in this range - CI uses 3.12 deliberately.
+# AlpaSim 0.134 (3.11-3.12) is unaffected: the gRPC boundary means this
+# bridge runs as its own process, so the two never share an environment.
 requires-python = ">=3.10,<3.13"
 dependencies = [
     "grpcio>=1.60",

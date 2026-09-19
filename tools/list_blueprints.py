@@ -10,7 +10,18 @@ and several survivors carry a ``vehicle.ue4.<make>.<model>`` id.
 Dimensions are not available from a blueprint - only a spawned actor has a
 bounding box - so each vehicle is spawned once at altitude, measured and
 destroyed. Walkers and props are listed without dimensions; the ladder does
-not use dims for them.
+not use dims for them. (On 0.10 the measuring loop is known to return zeros
+after the first vehicle - see :func:`measure`. Deferred by ruling, not
+missed.)
+
+This tool also decides, and RECORDS, the terminal fallback: the blueprint an
+actor the ladder cannot otherwise place degrades to. It is written into the
+listing as a ``# fallback_blueprint: <id>`` field, after the id has been
+verified to exist on this server, because it is a per-image fact and not a
+code default - ``static.prop.box03`` is the terminal on 0.9.16 and does not
+exist at all on the 0.10 Belmont image, where the terminal is
+``static.prop.advertisement``. See
+docs/adr/ADR-BRIDGE-001-terminal-fallback-is-a-recorded-fact.md.
 
 Usage:
 
@@ -38,6 +49,39 @@ import sys
 from typing import List, Tuple
 
 
+#: The tool's preference when the server has it, and nothing more. It is a
+#: SELECTION RULE here, not a fallback the ladder carries: whatever wins is
+#: verified on the server and written into the listing as a fact about that
+#: image. On 0.9.16 this id exists and is recorded; on the 0.10 Belmont
+#: image `static.prop.box*` returns zero blueprints, so the first prop in
+#: id order is recorded instead - which is how
+#: `fallback=static.prop.advertisement` came out of this tool on Belmont.
+PREFERRED_FALLBACK = "static.prop.box03"
+
+
+def choose_fallback(props: List[str]) -> str:
+    """Pick the terminal fallback for THIS server from its own props."""
+    if not props:
+        return ""
+    if PREFERRED_FALLBACK in props:
+        return PREFERRED_FALLBACK
+    return sorted(props)[0]
+
+
+def verify_on_server(library, blueprint_id: str) -> bool:
+    """Ask the server for the blueprint by id, not our own list.
+
+    The field is a claim about the server, so it is checked against the
+    server: ``find()`` raises for an id the library does not have. Writing
+    an unverified terminal would move the old failure - an id that is not
+    there - from a constant into a file, which is no improvement.
+    """
+    try:
+        return library.find(blueprint_id) is not None
+    except (IndexError, RuntimeError):
+        return False
+
+
 def categorize(blueprint) -> str:
     bid = blueprint.id
     if bid.startswith("walker."):
@@ -56,7 +100,42 @@ def categorize(blueprint) -> str:
 
 
 def measure(world, carla, blueprint) -> Tuple[float, float, float]:
-    """Spawn at altitude, read the bounding box, destroy. (0,0,0) on failure."""
+    """Spawn at altitude, read the bounding box, destroy. (0,0,0) on failure.
+
+    KNOWN BROKEN ON CARLA 0.10 - DEFERRED BY RULING, NOT MISSED.
+
+    Symptom, measured on the Belmont image on 2026-09-19: the generated
+    listing had **144 of 145 rows reading length 0.00**. Only
+    ``vehicle.ambulance.ford``, the first vehicle spawned, carried real
+    extents (6.36 x 2.35 x 2.43). The run also printed
+
+        WARNING: attempting to destroy an actor that is already dead:
+                 Actor 81 (vehicle.ambulance.ford)
+
+    Likely cause: the dimensions are read after the actor is already gone.
+    ``bounding_box`` is a property on a client-side actor handle, and on
+    0.10 that handle appears not to survive the spawn/destroy cycle this
+    function runs per blueprint, so every subsequent read returns a
+    zeroed box rather than raising. The `finally` destroy firing on an
+    actor the server already reaped is the same symptom from the other
+    side.
+
+    What a catalog of zeros affects:
+      * G2's nearest-dimensions rung - every candidate is (0,0,0), so the
+        "nearest" vehicle is whichever one sorts first, not the one that
+        fits;
+      * the blueprint audit, which resolves gated actors through that same
+        rung.
+    What it does NOT affect:
+      * the AABB collision cross-check in simforge-closed-loop, which reads
+        extents from the rollout log and never opens the catalog;
+      * Belmont Gate C, whose Stage C scene declares ``traffic: none``, so
+        no NPC is ever chosen or audited.
+
+    Deferred deliberately (Dib, 2026-09-19): it does not gate the Gate C
+    seeds, and it MUST be fixed before any Stage B scene package, where
+    NPCs exist and both readers above matter.
+    """
     transform = carla.Transform(carla.Location(x=0.0, y=0.0, z=500.0))
     actor = world.try_spawn_actor(blueprint, transform)
     if actor is None:
@@ -170,7 +249,10 @@ def probe(client, world, carla, map_name: str) -> None:
     v2x = [b.id for b in library.filter("sensor.other.v2x*")]
     say(f"v2x_blueprints           : {v2x or 'NONE'}")
     props = [b.id for b in library.filter("static.prop.box*")]
-    say(f"box_props                : {props or 'NONE (ladder has no box!)'}")
+    say(
+        "box_props                : "
+        f"{props or 'NONE (0.10: the terminal fallback will be another prop)'}"
+    )
 
     try:
         world.set_weather(carla.WeatherParameters.ClearNoon)
@@ -215,10 +297,16 @@ def main(argv: List[str] | None = None) -> int:
 
     library = world.get_blueprint_library()
     rows: List[str] = []
+    props: List[str] = []
+    # The measuring loop. Its dimensions are zero for all but the first
+    # vehicle on CARLA 0.10 - see measure() for the symptom, the cause and
+    # why the fix is deferred rather than missing.
     for blueprint in sorted(library, key=lambda b: b.id):
         category = categorize(blueprint)
         if not category:
             continue
+        if category == "prop":
+            props.append(blueprint.id)
         if category in ("vehicle", "two_wheeler") and not args.no_measure:
             length, width, height = measure(world, carla, blueprint)
         else:
@@ -227,11 +315,27 @@ def main(argv: List[str] | None = None) -> int:
             f"{blueprint.id}\t{category}\t{length:.2f}\t{width:.2f}\t{height:.2f}"
         )
 
+    # The terminal fallback is recorded, not defaulted, and it is only
+    # recorded once this server has confirmed it. If it cannot be confirmed
+    # the field is omitted and the listing is refused at load with a message
+    # naming this tool - which is the honest outcome, because a listing whose
+    # terminal is a guess is what put boxes in front of the driver before.
+    fallback = choose_fallback(props)
+    if fallback and not verify_on_server(library, fallback):
+        print(
+            f"{fallback} is in this server's blueprint list but find() does "
+            f"not return it; refusing to record it as the terminal fallback.",
+            file=sys.stderr,
+        )
+        fallback = ""
+
     header = [
         "# blueprint listing written by tools/list_blueprints.py",
         f"# server={client.get_server_version()} map={world.get_map().name}",
-        "# id\tcategory\tlength\twidth\theight",
     ]
+    if fallback:
+        header.append(f"# fallback_blueprint: {fallback}")
+    header.append("# id\tcategory\tlength\twidth\theight")
     with open(args.out, "w", encoding="utf-8") as handle:
         handle.write("\n".join(header + rows) + "\n")
 
@@ -249,7 +353,8 @@ def main(argv: List[str] | None = None) -> int:
     print(
         f"wrote {args.out}: {len(catalog.vehicles)} vehicles, "
         f"{len(catalog.two_wheelers)} two-wheelers, walker={catalog.walker}, "
-        f"fallback={catalog.fallback_prop}"
+        f"fallback_blueprint={catalog.fallback_prop} (verified on this "
+        f"server and recorded in the listing)"
     )
     return 0
 

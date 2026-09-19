@@ -9,12 +9,10 @@
 #
 #   docker build -f docker/Dockerfile \
 #       --build-arg CARLA_IMAGE=<registry>/<image>@sha256:<digest> \
-#       --build-arg PYTHON_VERSION=3.12 \
 #       -t alpasim-carla:0.10 .
 #
 # On a stock 0.9.16 twin the PythonAPI root differs, so add:
-#       --build-arg CARLA_PYTHONAPI=/workspace/PythonAPI \
-#       --build-arg PYTHON_VERSION=3.10
+#       --build-arg CARLA_PYTHONAPI=/workspace/PythonAPI
 #
 # CARLA_IMAGE is pinned BY DIGEST, not by tag. A tag on a private registry can
 # be re-pushed, and then two builds of the same Dockerfile silently contain
@@ -23,12 +21,33 @@
 #
 #   docker buildx imagetools inspect <registry>/<image>:<tag> | grep Digest
 #
-# PYTHON_VERSION must match a cp<ver> wheel present in the CARLA image. CARLA
-# 0.10 ships cp38 through cp312; 0.9.16 ships cp310 through cp312. The
-# wheel-selection step fails with the available filenames listed rather than a
-# bare "no matching distribution".
+# PYTHON_VERSION must match a cp<ver> wheel present in the CARLA image, and
+# what an image ships is a property OF THAT IMAGE, not of the CARLA release.
+# The default below is a pin, not a preference:
+#
+#   ghcr.io/simforgeinc/carla-rfs-munich-belmont@sha256:d1b16b061ef1c2947caf
+#   2d87109d2809617d5ebfd8c3cb999637e8751da83d22   (CARLA server 0.10.0)
+#
+# ships exactly one client wheel,
+#
+#   /home/carla/PythonAPI/carla/dist/carla-0.10.0-cp310-cp310-linux_x86_64.whl
+#
+# **cp310 only** - whatever the CARLA 0.10 release notes say about 3.8-3.12.
+# With the previous 3.12 default the build could not install the wheel it had
+# just copied; `--build-arg PYTHON_VERSION=3.10` produced alpasim-carla:
+# 0.10.0-belmont (sha256:1b7cec383985e9c14d73fe38b25cf5d7fa2beea322e1beec41b
+# 82803011fb4e2, 403 MB, python 3.10.21) with carla.Client and alpasim_carla
+# both importing. The bridge's own venv is 3.10 for the same reason; the
+# AlpaSim runtime stays on 3.12 in its separate process, which the gRPC
+# boundary guarantees (ADR-017).
+#
+# A different image may ship different wheels - stock 0.9.16 ships cp310
+# through cp312. Override the default when you measure otherwise; the
+# wheel-selection step below fails with the available filenames listed
+# rather than a bare "no matching distribution".
 
-ARG PYTHON_VERSION=3.12
+ARG PYTHON_VERSION=3.10
+
 # No default: a build must name the exact image it copied its client from.
 ARG CARLA_IMAGE
 

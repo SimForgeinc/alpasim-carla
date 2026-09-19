@@ -30,8 +30,16 @@ The CARLA version is **not** a repository-wide pin: each scene manifest
 declares the `carla_version` it was recorded against, and the bridge refuses
 to start against a server that does not match. See
 [Targeting a CARLA server that is not stock 0.9.16](#targeting-a-carla-server-that-is-not-stock-0916).
-CARLA 0.10 support is written but **unverified** — no 0.10 server has been
-reached yet; `pytest tests/ -m carla` is the acceptance suite for it.
+**CARLA 0.10 is verified as of 2026-09-19.** All ten acceptance tests pass
+against the Belmont image `sha256:d1b16b06…` on a live 0.10.0 server,
+`--run-mutating` included, with the renderer built from that image. What the
+day-one probe found and what it did not is in
+[`simforge-closed-loop/probes/belmont_day_one/`](https://github.com/SimForgeinc/simforge-closed-loop/tree/main/probes/belmont_day_one) —
+read it before the next 0.10 run, because two of its findings change how this
+repository behaves: `static.prop.box*` does not exist on 0.10 (hence
+`fallback_blueprint:` in the listing, ADR-BRIDGE-001), and
+`tools/list_blueprints.py` currently records zero dimensions on 0.10, which is
+a known deferred bug noted at its measuring loop.
 
 ## How it works
 
@@ -210,7 +218,7 @@ a wizard flag, wiring the runtime to the bridge's address via
 |---|---|
 | `src/alpasim_carla/server.py` | The gRPC server. Implements all 8 `SensorsimService` RPCs against a pluggable backend (CARLA or synthetic). |
 | `src/alpasim_carla/world.py` | The CARLA backend: synchronous-mode connection, pooled RGB sensors, the render path (sync actors → place camera → tick → capture → encode). |
-| `src/alpasim_carla/registry.py` | Track-id → CARLA actor registry, the bridge's only cross-call state. Unseen id → spawn, known id → teleport, absent id → despawn. Blueprint choice from the scene's actor table (label + bbox dims), with a box-prop fallback — objects are never dropped. |
+| `src/alpasim_carla/registry.py` | Track-id → CARLA actor registry, the bridge's only cross-call state. Unseen id → spawn, known id → teleport, absent id → despawn. Blueprint choice from the scene's actor table (label + bbox dims), degrading to the terminal prop the listing records — objects are never dropped. |
 | `src/alpasim_carla/frames.py` | Pure coordinate math between AlpaSim (right-handed ENU, quaternions) and Unreal (left-handed, degrees), including camera optical-frame handling. No CARLA or gRPC imports; fully unit-tested. |
 | `src/alpasim_carla/cameras.py` | Maps `CameraSpec` intrinsics to CARLA's pinhole camera. Non-pinhole models (ftheta, fisheye, distortion, rolling shutter) fail explicitly unless `--allow-pinhole-approximation` is set. |
 | `src/alpasim_carla/scenes.py` + `scenes/` | Scene manifests (YAML): `scene_id` → CARLA map, camera rig served by `get_available_cameras`, actor table, world anchor. `scenes/examples/` has ready-made scenes on stock towns. |
@@ -218,6 +226,7 @@ a wizard flag, wiring the runtime to the bridge's address via
 | `src/alpasim_carla/_proto/`, `proto/` | The pinned AlpaSim protos (vendored, Apache-2.0, attribution in `proto/README.md`) and generated stubs. |
 | `configs_pkg/` | `alpasim-carla-configs`: a pure-YAML package registering an `alpasim.configs` entry point, which makes `renderer=carla` a flag for AlpaSim's wizard. This is the only thing that touches AlpaSim's environment. |
 | `tools/` | `replay_contract.py` (replay recorded traffic against the servicer, no CARLA), `replay_render.py` (same, real rendering + checks), `validate_rollout.py` (closed-loop run validation + video), `record_scene.py` (record CARLA drives into test fixtures), `gen_protos.sh`. |
+| `docs/adr/` | Bridge-local decisions. `ADR-BRIDGE-001`: the ladder's terminal fallback is a per-image recorded fact. The `ADR-0NN` sequence belongs to `simforge-closed-loop`. |
 | `docs/CONTRACT.md` | Per-RPC contract: every field consumed/produced, units, coordinate frames. PRs that change behavior must change it. |
 | `evidence/` | Artifacts from the validation gates (G0–G4): replay reports, render metrics, closed-loop summaries, transcripts. |
 
@@ -317,7 +326,20 @@ alpasim-carla serve --backend carla --carla-port 3000 \
     --blueprint-catalog blueprints_0.10.txt ...
 ```
 
-Two behaviours changed:
+Three behaviours changed:
+
+- **The terminal fallback is recorded in the listing, not compiled into the
+  ladder.** `tools/list_blueprints.py` writes
+  `# fallback_blueprint: <id>` after verifying that blueprint on the server
+  it listed, and the ladder reads it. `static.prop.box03` — the old constant
+  — returns **zero** blueprints on the 0.10 Belmont image, where the recorded
+  terminal is `static.prop.advertisement`; a constant meant two different
+  things on two servers. A listing without the field is refused at load and
+  told to regenerate rather than silently defaulted. See
+  `docs/adr/ADR-BRIDGE-001-terminal-fallback-is-a-recorded-fact.md`. Because
+  the header changed, **every listing's sha256 changed**: a run manifest
+  pinning `blueprint_catalog_digest` pins the old catalog, so regenerate per
+  image and record the new digest.
 
 - **The version check is a hard gate, and the scene manifest decides what it
   demands.** Each manifest declares `carla_version:` — the shipped 0.9.16
