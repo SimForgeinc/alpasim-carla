@@ -1,0 +1,251 @@
+scene_id: clipgt-01d503d4-449b-46fc-8d78-9085e70d3554
+# The SAME scene_id as scenes/g3/clipgt-01d503d4-town10.yaml, deliberately.
+# The runtime resolves this id in AlpaSim's scene catalog and the renderer
+# resolves the same string in its --scenes-dir, so both sides must name one
+# scene. These two manifests are alternative ANCHORINGS of one clip - Town10
+# for the rehearsal, Belmont for Gate C - and the launcher chooses between
+# them with SCENES_DIR. They must never share a directory: load_scene_dir()
+# refuses a duplicate scene_id, which is what keeps the choice a choice
+# rather than a coin toss over whichever file sorted first.
+carla_map: Belmont_Office_Park_Belmont_CA
+# The full name, because that is what the server reports. The 2026-09-19
+# probe on simforge1 recorded load_world("Belmont_Office_Park_Belmont_CA")
+# returning 'Carla/Maps/Belmont_Office_Park_Belmont_CA', and the image
+# booting into 'Carla/Maps/Town10HD_Opt'. compat.normalize_map_name() strips
+# the 'Carla/Maps/' prefix - and a trailing '_Opt' - before
+# compat.map_names_match() compares, so the server's prefixed string and this
+# bare name are one town. That stripping is the whole reason this key can
+# hold the name a human would type.
+carla_version: "0.10.0"
+# What the Belmont image reports. G3 stays "0.9.16": it is the rehearsal
+# scene on the twin, and it was anchored against that server. Because the two
+# manifests disagree, compat.resolve_expected_version() refuses to serve both
+# from one process - one bridge process, one server, stated rather than
+# assumed.
+#
+# This field is also what retires CARLA_EXPECT_VERSION. The acceptance tests
+# needed that override on 2026-09-19 only because every shipped manifest
+# declared 0.9.16 while the server was 0.10.0. A scene that declares its own
+# version needs no override, so no launcher should carry one. The environment
+# variable stays supported in tests/test_carla_acceptance.py as a documented
+# escape hatch; what is retired is our use of it.
+description: 'Stage C Belmont scene: OSS clip clipgt-01d503d4 (runtime-side
+  session data comes from the AlpaSim scene catalog - per D4 a NuRec clip)
+  rendered in CARLA Belmont_Office_Park_Belmont_CA on the 0.10 image; the
+  recorded ego start is anchored onto Belmont spawn point 56, chosen by the
+  straight-run search recorded below. Route adherence stays reported-only on
+  this scene, per ADR-020: the reference path is the clip''s own, recorded
+  somewhere that is not this town, so the number measures the gap between two
+  places rather than the quality of the driving.'
+#
+# PROBE FACTS THAT BEAR ON THIS SCENE
+# ghcr.io/simforgeinc/carla-rfs-munich-belmont@sha256:d1b16b06..., on
+# simforge1, 2026-09-19. The full probe is
+# simforge-closed-loop/probes/belmont_day_one/README.md.
+#
+#   * `static.prop.box*` returns ZERO blueprints on this image; it returns 24
+#     on 0.9.16. It was the ladder's terminal fallback. Per ADR-BRIDGE-001 the
+#     terminal is read from the listing's `fallback_blueprint:` field, which
+#     tools/list_blueprints.py writes only after verifying the blueprint
+#     exists on the server it listed - on this image that came out
+#     `static.prop.advertisement`. It is never named in a manifest and never
+#     a constant in code, so `blueprint_overrides` below stays empty.
+#   * The 0.10 listing has no dimensions: 144 of 145 rows measured 0.00,
+#     because the measuring loop loses its actor after the first spawn on this
+#     image. The nearest-dims rung therefore has nothing to compare against
+#     until that bridge-side defect is fixed. The actor table at the foot of
+#     this file carries the clip's own sizes and is unaffected; it is the
+#     server-side listing that is dimensionless.
+#   * `reload_world()` RAISES on this image, every time
+#     (RuntimeError: std::exception), and the server survives it. A reload
+#     between rollouts must be load_world("Belmont_Office_Park_Belmont_CA"),
+#     measured at 4.3 s then 4.7 s - cheap enough to do between seeds.
+#   * The map name carries the 'Carla/Maps/' prefix; see `carla_map` above.
+#
+# THE ANCHOR, AND THE SEARCH THAT CHOSE IT
+#
+# Measured on the live Belmont server, 2026-09-19. 240 spawn points. For each,
+# the straight run ahead was measured by walking
+# map.get_waypoint(sp.location).next(2.0) - step 2.0 m, cap 400 m - and
+# stopping the first time the waypoint heading deviated more than 5 deg from
+# the spawn heading. `maxdev` is recorded AFTER the step that broke the loop,
+# so a value above 5 deg means the run ended by turning rather than by
+# drifting.
+#
+#   idx=239  run=226.0 m  maxdev=14.8 deg  loc=(-33.35, 222.72, 9.43)  yaw=-92.803
+#   idx= 56  run=224.0 m  maxdev= 5.1 deg  loc=(-40.42,   9.05, 5.69)  yaw= 90.462
+#   idx=108  run=144.0 m  maxdev=20.0 deg  loc=(-32.97, 140.22, 9.46)  yaw=-89.707
+#   idx=223  run=140.0 m  maxdev= 5.2 deg  loc=( -4.12,-170.52, 6.11)  yaw=-178.141
+#   idx=143  run=136.0 m  maxdev=45.0 deg  loc=(-43.96,   9.02, 5.69)  yaw= 90.475
+#   idx=134  run=126.0 m  maxdev= 5.1 deg  loc=(-41.28, 107.65, 8.55)  yaw= 90.430
+#
+# 13 spawn points have run >= 100 m. Locations and yaws above are CARLA's, in
+# the left-handed UE frame.
+#
+# idx=56, not idx=239, and the two metres between them are not the reason.
+# idx=239 broke at 14.8 deg: a ~10 deg jump in a single 2 m step, which is
+# what `next()` returning a junction branch looks like. Its 226 m therefore
+# ends at an intersection. idx=56 broke at 5.1 deg, a gradual drift just over
+# the tolerance - a road that keeps going and bends gently. For a 73.8 m clip
+# played back open-loop-ish, a gentle bend 224 m away is a better neighbour
+# than a junction at 226 m. idx=143 is the adjacent lane of the same road
+# (3.5 m away, same heading) and breaks at 136 m with maxdev 45 deg, which is
+# the same junction seen from the lane that turns into it - further evidence
+# that idx=56's lane is the one that continues.
+#
+# The clip: 202 poses, 73.8 m, essentially straight along local +x, t0 pose
+# EXACTLY identity (xyz 0,0,0; quat_wxyz 1,0,0,0), initial heading -0.171 deg.
+# Because t0 is identity, `simforge_frames.apply_anchor` composing
+# `anchor . pose` leaves the anchor AS the ego's start pose in ENU - there is
+# nothing to solve for the translation, only a frame to cross.
+#
+# So the numbers below were not hand-derived. They are
+# `frames.alpasim_pose_from_carla(loc, (0.0, yaw, 0.0), axes="flu")` run on
+# idx=56 - the repository's own inverse of the handedness conversion - and
+# tests/test_belmont_anchor.py asserts the forward round trip:
+#
+#   carla_transform_tuple(*apply_anchor(translation, yaw_deg, CLIP_T0_POSE),
+#                         axes="flu")  ==  ((-40.42, 9.05, 5.69),
+#                                           (0.0, 90.462, 0.0))
+#
+# with idx=56's numbers inline, so the anchor cannot drift from the spawn
+# point it was chosen for without something going red on a laptop. The same
+# test runs the solver against the target scenes/g3 lands on and reproduces
+# G3's published anchor bit for bit, which is what licenses this one.
+#
+# The clip's own -0.171 deg initial heading is NOT compensated here: the
+# anchor puts t0 exactly on the spawn pose, and 0.171 deg over 73.8 m is
+# 0.22 m of lateral drift by the end of the clip - inside a lane.
+#
+# z IS THE ROAD SURFACE, NOT THE SPAWN POINT'S OWN z, AND THE DIFFERENCE IS
+# FOUR METRES.
+#
+# `get_spawn_points()[56].location.z` is 5.6872. The waypoint it projects to -
+# the road surface under it - is at 1.6872. Measured 2026-09-19 against the
+# live server:
+#
+#   spawn 56 location z        5.6872
+#   waypoint (road surface) z  1.6872
+#   delta                      4.0000 m
+#   waypoint yaw 90.4624 == spawn yaw 90.4624, lane_width 3.56, Driving
+#
+# CARLA lifts spawn points above the road so a physics-enabled vehicle can be
+# placed without interpenetrating it. NOTHING HERE IS PHYSICS-ENABLED: the
+# runtime dictates every ego pose and the bridge teleports to it, so the lift
+# is not a safety margin, it is a four-metre error. Anchored at 5.69 the ego
+# and its entire camera rig would have flown the whole campaign four metres
+# up, and the renders would have looked plausible - a slightly high viewpoint -
+# rather than obviously wrong.
+#
+# G3 anchors at z = -0.1115, which is Town10's road level, so road level is
+# also the convention this replaces rather than departs from.
+#
+# The first Belmont render is still where camera height gets checked against
+# the road: the rig adds about 1.59 m on top of this. `ground_z` is carried
+# from G3 as null and is read by no code today.
+local_to_world:
+  translation:
+  - -40.42
+  - -9.05
+  - 1.6872
+  yaw_deg: -90.462
+ground_z: null
+blueprint_overrides: {}
+cameras:
+- logical_id: camera_cross_left_120fov
+  rig_to_camera:
+    translation:
+    - 2.547107696533203
+    - 0.9542992115020752
+    - 1.0079210996627808
+    quat_wxyz:
+    - -0.6916033029556274
+    - 0.6945090293884277
+    - -0.14168775081634521
+    - 0.13880448043346405
+  intrinsics:
+    model: ftheta_param
+    logical_id: camera_cross_left_120fov
+    proto_b64: EowBCQAAAACU5Y1AEQAAAMBZZ4dAGAEiMAAAAAAAAAAAAAAAYEpwUT8AAACgiJoYPgAAAKBh+Ii9AAAAoB3BJT0AAACA1NtmvCowAAAAAAAAAAAAAADgylqNQAAAAEDjQsk/AAAAQPSa6r8AAAAA7xQ7wAAAAMAy2CFAMSAFmLiGsPU/OgkJAAAAAAAA8D8qGGNhbWVyYV9jcm9zc19sZWZ0XzEyMGZvdji4CECAD0gB
+- logical_id: camera_cross_right_120fov
+  rig_to_camera:
+    translation:
+    - 2.526639699935913
+    - -0.969810962677002
+    - 0.9836940765380859
+    quat_wxyz:
+    - 0.15009915828704834
+    - -0.13308656215667725
+    - 0.6947598457336426
+    - -0.690700352191925
+  intrinsics:
+    model: ftheta_param
+    logical_id: camera_cross_right_120fov
+    proto_b64: EowBCQAAACDEzo1AEQAAAABbYodAGAEiMAAAAAAAAAAAAAAAQJSBUT8AAADArCrivQAAAKBUCIU9AAAAIHaCIT0AAADAQ61avCowAAAAAAAAAAAAAAAgwD6NQAAAAODGPdg/AAAAAGtN+L8AAADAQDk5wAAAAADL2h5AMW4zvDey0PU/OgkJAAAAAAAA8D8qGWNhbWVyYV9jcm9zc19yaWdodF8xMjBmb3Y4uAhAgA9IAQ==
+- logical_id: camera_front_tele_30fov
+  rig_to_camera:
+    translation:
+    - 1.9278041124343872
+    - -0.10532723367214203
+    - 1.5693867206573486
+    quat_wxyz:
+    - 0.49186259508132935
+    - -0.5013390183448792
+    - 0.5121292471885681
+    - -0.494422972202301
+  intrinsics:
+    model: ftheta_param
+    logical_id: camera_front_tele_30fov
+    proto_b64: EowBCQAAAIDZ/o1AEQAAAABo8YBAGAEiMAAAAAAAAAAAAAAAAPnAMT8AAABgyjn/vQAAAACE9lK9AAAAgD54wDwAAAAgGTr1OyowAAAAAAAAAAAAAAAgxtasQAAAAGDMhTZAAAAAwPBkS0AAAABAS/90wAAAAKD9lWLAMeAJMuOPM9M/OgkJAAAAAAAA8D8qF2NhbWVyYV9mcm9udF90ZWxlXzMwZm92OLgIQIAPSAE=
+- logical_id: camera_front_wide_120fov
+  rig_to_camera:
+    translation:
+    - 2.01627254486084
+    - -0.061019591987133026
+    - 1.5914044380187988
+    quat_wxyz:
+    - -0.4964086413383484
+    - 0.5043780207633972
+    - -0.49575066566467285
+    - 0.503400981426239
+  intrinsics:
+    model: ftheta_param
+    logical_id: camera_front_wide_120fov
+    proto_b64: EowBCQAAAMDk4I1AEQAAACDTlodAGAEiMAAAAAAAAAAAAAAAwLxRUT8AAADAhM9fPgAAACDTltm9AAAAoKV5Rz0AAABAPCiUvCowAAAAAAAAAAAAAADA8oONQAAAAOBn9CXAAAAAIDVaQEAAAAAAe1lTwAAAAOAWQkBAMYscT2w5nfU/OgkJAAAAAAAA8D8qGGNhbWVyYV9mcm9udF93aWRlXzEyMGZvdji4CECAD0gB
+- logical_id: camera_rear_left_70fov
+  rig_to_camera:
+    translation:
+    - 2.1991591453552246
+    - 1.0855469703674316
+    - 1.1520012617111206
+    quat_wxyz:
+    - 0.6057456731796265
+    - -0.6051592826843262
+    - -0.36812663078308105
+    - 0.3624047040939331
+  intrinsics:
+    model: ftheta_param
+    logical_id: camera_rear_left_70fov
+    proto_b64: EowBCQAAAKASK45AEQAAACAQ/4BAGAEiMAAAAAAAAAAAAAAAwGPJRD8AAABAUhExPgAAACCdV7y9AAAAIGGDLD0AAACgBwCBvCowAAAAAAAAAAAAAACAUaOYQAAAAED3iDbAAAAAgAdPaEAAAADgM52BwAAAAKDeUX9AMRl4A5oca+Y/OgkJAAAAAAAA8D8qFmNhbWVyYV9yZWFyX2xlZnRfNzBmb3Y4uAhAgA9IAQ==
+- logical_id: camera_rear_right_70fov
+  rig_to_camera:
+    translation:
+    - 2.1263248920440674
+    - -1.0209566354751587
+    - 1.1663774251937866
+    quat_wxyz:
+    - -0.36042430996894836
+    - 0.36463844776153564
+    - 0.6091309785842896
+    - -0.6050558686256409
+  intrinsics:
+    model: ftheta_param
+    logical_id: camera_rear_right_70fov
+    proto_b64: EowBCQAAAKCUAo5AEQAAAGBiNoFAGAEiMAAAAAAAAAAAAAAAYITPRD8AAABAfgw2PgAAAKACtcG9AAAAgFnwMD0AAACAdY+DvCowAAAAAAAAAAAAAACAT5yYQAAAAOAt/jvAAAAA4GDKbUAAAACgDbuEwAAAAKD754FAMRl4A5oca+Y/OgkJAAAAAAAA8D8qF2NhbWVyYV9yZWFyX3JpZ2h0XzcwZm92OLgIQIAPSAE=
+actors:
+- actor_id: EGO
+  label: ''
+  size_lwh:
+  - 5.206999778747559
+  - 2.1570000648498535
+  - 1.8229999542236328

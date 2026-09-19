@@ -221,7 +221,7 @@ a wizard flag, wiring the runtime to the bridge's address via
 | `src/alpasim_carla/registry.py` | Track-id → CARLA actor registry, the bridge's only cross-call state. Unseen id → spawn, known id → teleport, absent id → despawn. Blueprint choice from the scene's actor table (label + bbox dims), degrading to the terminal prop the listing records — objects are never dropped. |
 | `src/alpasim_carla/frames.py` | Pure coordinate math between AlpaSim (right-handed ENU, quaternions) and Unreal (left-handed, degrees), including camera optical-frame handling. No CARLA or gRPC imports; fully unit-tested. |
 | `src/alpasim_carla/cameras.py` | Maps `CameraSpec` intrinsics to CARLA's pinhole camera. Non-pinhole models (ftheta, fisheye, distortion, rolling shutter) fail explicitly unless `--allow-pinhole-approximation` is set. |
-| `src/alpasim_carla/scenes.py` + `scenes/` | Scene manifests (YAML): `scene_id` → CARLA map, camera rig served by `get_available_cameras`, actor table, world anchor. `scenes/examples/` has ready-made scenes on stock towns. |
+| `src/alpasim_carla/scenes.py` + `scenes/` | Scene manifests (YAML): `scene_id` → CARLA map, camera rig served by `get_available_cameras`, actor table, world anchor. `scenes/examples/` has ready-made scenes on stock towns; `scenes/g3/` and `scenes/belmont/` are two anchorings of one clip - the same `scene_id` on Town10 (0.9.16, the rehearsal) and on Belmont (0.10.0, Gate C) - chosen by which one the bridge is pointed at. |
 | `src/alpasim_carla/aslio.py` | Reader for AlpaSim `.asl` rollout logs (length-prefixed protobuf), used by the replay tools. |
 | `src/alpasim_carla/_proto/`, `proto/` | The pinned AlpaSim protos (vendored, Apache-2.0, attribution in `proto/README.md`) and generated stubs. |
 | `configs_pkg/` | `alpasim-carla-configs`: a pure-YAML package registering an `alpasim.configs` entry point, which makes `renderer=carla` a flag for AlpaSim's wizard. This is the only thing that touches AlpaSim's environment. |
@@ -343,7 +343,7 @@ Three behaviours changed:
 
 - **The version check is a hard gate, and the scene manifest decides what it
   demands.** Each manifest declares `carla_version:` — the shipped 0.9.16
-  examples say `'0.9.16'`, a Belmont manifest says `'0.10.0'` — and the
+  examples say `'0.9.16'`, `scenes/belmont` says `'0.10.0'` — and the
   bridge refuses to start against a server that does not match. Manifests
   that disagree with each other are an error: one process serves one server.
   `--expect-carla-version` overrides them all; an empty string skips the
@@ -444,5 +444,11 @@ See `simforge-closed-loop/docs/adr/ADR-017`.
 `tests/test_carla_acceptance.py` holds the day-one checks for a 0.10 server as
 executable acceptance criteria rather than prose. They are configured by
 `CARLA_HOST`, `CARLA_PORT`, `CARLA_MAP`, `CARLA_EXPECT_VERSION` and
-`ALPASIM_BLUEPRINT_CATALOG`, and **none of them has been run against a 0.10
-server yet.**
+`ALPASIM_BLUEPRINT_CATALOG`. **All ten passed on 2026-09-19** against the
+Belmont image on a live 0.10.0 server, `--run-mutating` included.
+
+They resolve the expected version from `scenes/belmont`, which declares
+`carla_version: "0.10.0"`. `CARLA_EXPECT_VERSION` remains a documented
+override and is what got that run green before the Belmont manifest existed —
+**leave it unset.** A scene that declares its own version needs no override,
+and an override left set in a launcher is a handshake that cannot fail.

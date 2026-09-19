@@ -2,9 +2,15 @@
 
 These are the day-one checks. They are the branch's acceptance criteria: the
 0.10 port is not done until they pass against
-``ghcr.io/abhisheksimforgeai/carla-rfs-munich-belmont:0.10.0``. Every one of
-them is currently unverified - no 0.10 server was reachable when the branch
-was written.
+``ghcr.io/abhisheksimforgeai/carla-rfs-munich-belmont:0.10.0``. All ten
+passed on 2026-09-19 against the Belmont image on simforge1, with
+``--run-mutating``
+(``simforge-closed-loop/probes/belmont_day_one/acceptance-tests.txt``).
+
+Two of them needed ``CARLA_EXPECT_VERSION=0.10.0`` that day, because every
+shipped manifest declared ``0.9.16`` while the server reported ``0.10.0``.
+``scenes/belmont`` now declares its own ``0.10.0``, these checks resolve the
+version from it, and the override should not be left set in any launcher.
 
 All are marked ``carla``, so the simulator-free suite is unaffected::
 
@@ -17,8 +23,10 @@ Configure via environment:
     CARLA_HOST                 default 127.0.0.1
     CARLA_PORT                 default 2000
     CARLA_MAP                  default Town10HD_Opt - the map to expect
-    CARLA_EXPECT_VERSION       overrides the manifests' carla_version;
-                               unset means the manifests decide
+    CARLA_EXPECT_VERSION       overrides SCENES_DIR's carla_version; unset
+                               means the manifest decides, which since
+                               scenes/belmont exists is the right answer.
+                               Supported, but nothing should set it
     ALPASIM_BLUEPRINT_CATALOG  listing from tools/list_blueprints.py;
                                when unset the curated 0.9.16 table is used
                                and the catalogue-agreement test is skipped
@@ -47,6 +55,13 @@ PORT = int(os.environ.get("CARLA_PORT", "2000"))
 MAP = os.environ.get("CARLA_MAP", "Town10HD_Opt")
 EXPECT_VERSION = os.environ.get("CARLA_EXPECT_VERSION", "")
 CATALOG_PATH = os.environ.get("ALPASIM_BLUEPRINT_CATALOG", "")
+
+#: The scenes these checks resolve their expectations from. scenes/belmont,
+#: because these are the 0.10 day-one checks and that manifest is the only one
+#: anchored onto this server's map and build. Resolving against
+#: scenes/examples - three 0.9.16 render-test manifests - is what made
+#: CARLA_EXPECT_VERSION necessary on 2026-09-19.
+SCENES_DIR = "scenes/belmont"
 
 
 @pytest.fixture(scope="module")
@@ -80,12 +95,12 @@ def catalog():
 def test_server_reports_the_version_the_manifests_declare(client):
     """EXPECT_VERSION overrides; otherwise the shipped manifests decide."""
     expected = EXPECT_VERSION or resolve_expected_version(
-        load_scene_dir("scenes/examples"), flag=None
+        load_scene_dir(SCENES_DIR), flag=None
     )
     if expected is None:
         pytest.skip(
-            "no carla_version in scenes/examples and CARLA_EXPECT_VERSION "
-            "unset; nothing to check"
+            f"no carla_version in {SCENES_DIR} and CARLA_EXPECT_VERSION "
+            f"unset; nothing to check"
         )
     check_server(
         server_version=client.get_server_version(),
@@ -178,7 +193,9 @@ def test_the_catalogue_has_vehicles_and_a_walker(catalog):
 # -- the ladder against real scenes -------------------------------------------
 
 
-@pytest.mark.parametrize("scenes_dir", ["scenes/examples", "scenes/g3"])
+@pytest.mark.parametrize(
+    "scenes_dir", ["scenes/examples", "scenes/g3", "scenes/belmont"]
+)
 def test_no_shipped_scene_actor_degrades_to_the_prop(scenes_dir, catalog):
     """Gate G2's check, widened to cyclists and motorcycles: a run where a
     gated actor became a box scores nothing."""
@@ -218,7 +235,7 @@ def test_render_returns_a_decodable_frame_at_the_requested_size(client, catalog)
     from alpasim_carla.server import ServerOptions
     from alpasim_carla.world import CarlaBackend
 
-    scenes = load_scene_dir("scenes/examples")
+    scenes = load_scene_dir(SCENES_DIR)
     scene = next(iter(scenes.values()))
     scene.carla_map = MAP
 
