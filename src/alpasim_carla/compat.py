@@ -139,3 +139,43 @@ def check_server(
             f"for {expected_map!r} (normalized "
             f"{normalize_map_name(expected_map)!r})."
         )
+
+
+class ClientMismatch(RuntimeError):
+    """The CARLA client wheel does not match the server it is talking to.
+
+    Distinct from :class:`ServerMismatch`, which is about the SCENE: that one
+    asks whether the server is the one a manifest was recorded against. This
+    one asks whether the library in this process speaks the server's protocol
+    at all, and it is the check that was missing.
+    """
+
+
+def check_client(*, client_version: str, server_version: str) -> None:
+    """Raise :class:`ClientMismatch` unless the wheel matches the server.
+
+    CARLA itself only WARNS here - it prints "Version mismatch detected" to
+    stderr and connects anyway. What follows is not a clean failure: the
+    first Belmont campaign ran a 0.9.16 client against the 0.10 server,
+    loaded the map, and hung before the first policy decision with nothing in
+    any log naming the cause.
+
+    The comparison is exact rather than by major.minor. Two CARLA releases
+    that disagree in the patch position have disagreed about the Python API
+    before, and a renderer is the wrong place to be generous: the wheel is
+    pinned by the server image it was copied out of, so an exact match is
+    always achievable and an inexact one is always a mistake.
+    """
+    if client_version == server_version:
+        return
+    raise ClientMismatch(
+        f"CARLA client wheel is {client_version!r} and the server is "
+        f"{server_version!r}; refusing to start. CARLA only warns about this "
+        f"and then connects, which is how it costs a campaign rather than a "
+        f"startup.\n"
+        f"The wheel ships INSIDE the server image and decides the "
+        f"interpreter: the Belmont 0.10 image carries only "
+        f"carla-0.10.0-cp310, so a 0.10 renderer runs on Python 3.10. Copy "
+        f"the wheel out of the image you are running against and install it "
+        f"into an interpreter its tag allows."
+    )

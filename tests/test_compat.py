@@ -195,3 +195,51 @@ def test_a_release_mismatch_does_not_mention_git_hashes():
             expected_map="Town10HD_Opt",
         )
     assert "git hash" not in str(exc.value)
+
+
+# -- the client wheel against the server --------------------------------------
+
+
+def test_a_matching_client_wheel_passes():
+    from alpasim_carla.compat import check_client
+
+    check_client(client_version="0.10.0", server_version="0.10.0")
+
+
+def test_a_mismatched_client_wheel_is_refused():
+    """CARLA only warns and then connects, which costs a campaign.
+
+    The first Belmont attempt ran a 0.9.16 client against the 0.10 server -
+    the renderer was started from a 3.12 venv, because the Belmont image
+    ships only a cp310 wheel - and it loaded the map and hung before the
+    first policy decision with nothing naming the cause. The scene handshake
+    could not catch it: it compares the manifest's `carla_version` to the
+    server's, and both said 0.10.0.
+    """
+    import pytest
+
+    from alpasim_carla.compat import ClientMismatch, check_client
+
+    with pytest.raises(ClientMismatch) as excinfo:
+        check_client(client_version="0.9.16", server_version="0.10.0")
+    message = str(excinfo.value)
+    # Both sides named, so the log says what was found as well as what was
+    # wanted - the same courtesy ServerMismatch already extends.
+    assert "0.9.16" in message and "0.10.0" in message
+    # And the fix, because the wheel is inside the image and its tag decides
+    # the interpreter.
+    assert "cp310" in message
+
+
+def test_the_client_check_is_exact_and_not_by_major_minor():
+    """A renderer is the wrong place to be generous.
+
+    The wheel is pinned by the server image it was copied out of, so an
+    exact match is always achievable and an inexact one is always a mistake.
+    """
+    import pytest
+
+    from alpasim_carla.compat import ClientMismatch, check_client
+
+    with pytest.raises(ClientMismatch):
+        check_client(client_version="0.9.15", server_version="0.9.16")

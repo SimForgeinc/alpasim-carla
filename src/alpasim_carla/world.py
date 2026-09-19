@@ -31,7 +31,7 @@ from PIL import Image
 from alpasim_carla import frames
 from alpasim_carla.cameras import resolve_camera
 from alpasim_carla.catalog import BlueprintCatalog, default_catalog
-from alpasim_carla.compat import check_server, map_names_match
+from alpasim_carla.compat import check_client, check_server, map_names_match
 from alpasim_carla.registry import ActorRegistry
 from alpasim_carla.scenes import SceneManifest
 from alpasim_carla.server import RenderBackend, ServerOptions, encode_image
@@ -123,6 +123,21 @@ class CarlaBackend(RenderBackend):
         logger.info(
             "Connected to CARLA %s at %s:%d (blueprint catalogue: %s)",
             version, host, port, self._catalog.source,
+        )
+        # THE CLIENT WHEEL AGAINST THE SERVER, which is a different axis from
+        # the scene's carla_version below and was the one nothing checked.
+        #
+        # A 0.9.16 client connects to a 0.10 server, prints CARLA's own
+        # "Version mismatch detected" warning to stderr, and carries on. The
+        # first Belmont campaign did exactly that - the renderer was started
+        # from a 3.12 venv holding the 0.9.16 wheel, because the Belmont image
+        # ships only cp310 - loaded the map, and then hung before the first
+        # policy decision with nothing in the log naming the cause. The scene
+        # handshake could not catch it: it compared 0.10.0 to 0.10.0 and
+        # agreed.
+        check_client(
+            client_version=self._client.get_client_version(),
+            server_version=version,
         )
         # Hard handshake. A warning here used to let a 0.9.16 client talk to a
         # 0.10 server and fail much later inside load_world or the blueprint
