@@ -9,7 +9,10 @@ map plus everything the bridge needs that the render requests do NOT carry:
     add new ones; verified in alpasim_runtime.camera_catalog at a1f05bb);
   * the actor table (actor/track id -> label + AABB size) used for blueprint
     selection, since DynamicObject carries only track_id + poses;
-  * a local_to_world anchor placing the AlpaSim local frame in the town.
+  * a local_to_world anchor placing the AlpaSim local frame in the town;
+  * ``traffic:`` - what was on the road, in simforge-closed-loop's run
+    manifest vocabulary, because the actor table says what the clip HAD and
+    a suppressed run contains none of it.
 
 For replay workflows the manifest is generated from a rollout.asl
 (rollout_metadata has the actor table; available_cameras_return has the rig).
@@ -29,6 +32,37 @@ import yaml
 
 from alpasim_carla._proto.alpasim_grpc.v0 import common_pb2, sensorsim_pb2
 from alpasim_carla.aslio import read_sensorsim_log
+
+
+#: What was on the road, in the words ``simforge-closed-loop``'s run manifest
+#: uses (``tools/run_manifest.py:TRAFFIC_SOURCES``). Copied verbatim, not
+#: paraphrased: the run manifest and the scene manifest are two documents
+#: describing one run, and a run that is ``clip_replay_suppressed`` in one
+#: and "suppressed" or "none" in the other is a run whose two records have
+#: to be reconciled by a human who was not there.
+#:
+#: * ``clip_replay`` - the recording's own actors were replayed as traffic.
+#:   ``scenes/g3`` is this: the 0.9.16 rehearsal carried the clip's traffic.
+#: * ``clip_replay_suppressed`` - the clip had actors and the run contained
+#:   none of them (``SimulationConfig.replayed_traffic: disabled``). The
+#:   Belmont rerun is this, and the manifest's ``actors:`` table still
+#:   carries the clip's sizes: the table says what the clip HAD, this field
+#:   says what the run CONTAINED, and after the 2026-09-19 campaign those
+#:   are not the same question.
+#: * ``scripted`` - the actors came from a scene package rather than from a
+#:   recording. ``scenes/examples`` is this: authored render fixtures with
+#:   no clip behind them.
+TRAFFIC_SOURCES = ("clip_replay", "clip_replay_suppressed", "scripted")
+
+
+class TrafficContradiction(RuntimeError):
+    """The world contains traffic the scene manifest said it would not.
+
+    Raised out of ``ActorRegistry.sync`` rather than logged, because a run
+    that declares ``clip_replay_suppressed`` and then replays the clip is a
+    run whose evidence says the opposite of what happened - and both halves
+    look normal afterwards.
+    """
 
 
 @dataclass
@@ -60,6 +94,10 @@ class SceneManifest:
     # git hash for a custom build). None means "do not check". The bridge
     # refuses to start against a server that does not match.
     carla_version: Optional[str] = None
+    # What was on the road: one of TRAFFIC_SOURCES. Required of a manifest on
+    # disk (see _require_traffic); None is reachable only in memory, where
+    # dozens of tests build a SceneManifest with no file behind it.
+    traffic: Optional[str] = None
 
     def available_cameras_return(self) -> sensorsim_pb2.AvailableCamerasReturn:
         ret = sensorsim_pb2.AvailableCamerasReturn()
@@ -188,13 +226,18 @@ def manifest_to_yaml(manifest: SceneManifest) -> str:
             for a in manifest.actors.values()
         ],
     }
+    after_map = {}
     if manifest.carla_version:
         # Insert after carla_map so the two server-facing keys sit together.
+        after_map["carla_version"] = manifest.carla_version
+    if manifest.traffic:
+        after_map["traffic"] = manifest.traffic
+    if after_map:
         ordered = {}
         for key, value in data.items():
             ordered[key] = value
             if key == "carla_map":
-                ordered["carla_version"] = manifest.carla_version
+                ordered.update(after_map)
         data = ordered
     return yaml.safe_dump(data, sort_keys=False)
 
@@ -228,6 +271,61 @@ def _require_carla_version(data: Dict[str, object]) -> str:
     )
 
 
+def _require_traffic(data: Dict[str, object]) -> str:
+    """Required, for the reason ``carla_version`` is: it gates a check.
+
+    ``ActorRegistry.sync`` holds a scene that declares
+    ``clip_replay_suppressed`` to that claim - an empty road is the one
+    traffic statement the bridge can verify, since it is the only process
+    that sees the actors. A field that can be omitted is a way to skip that
+    verification while looking like a manifest that simply predates the
+    field, which is exactly what ``carla_version`` did before it was
+    required: "a handshake that runs only when the field is present is an
+    opt-in".
+
+    It is also the scene's half of a record. ``simforge-closed-loop``'s run
+    manifest already refuses a run that does not state its ``traffic``, and
+    derives the value from the experiment config - from the run's INTENT.
+    This field is the same word written down where the actors actually
+    arrive. The Belmont campaign that collided on seed 20260918 recorded
+    nothing about what was on the road, and establishing it afterwards meant
+    counting actor poses in the log.
+
+    Every shipped manifest can answer it, which is the test of whether a
+    required field is the right shape: ``scenes/g3`` carried the clip's
+    traffic (``clip_replay``), ``scenes/belmont`` is the suppressed rerun
+    (``clip_replay_suppressed``), and ``scenes/examples`` are authored render
+    fixtures with no recording behind them (``scripted``).
+    """
+    traffic = data.get("traffic")
+    if isinstance(traffic, str) and traffic.strip() in TRAFFIC_SOURCES:
+        return traffic.strip()
+    # `traffic: true` and `traffic: none` are YAML scalars, not strings, and
+    # both are words a reasonable person reaches for. They get the
+    # vocabulary, not the "you said nothing" message.
+    if traffic is not None and str(traffic).strip():
+        raise ValueError(
+            f"scene {data.get('scene_id')!r} declares traffic="
+            f"{str(traffic).strip()!r}, which is not one of {TRAFFIC_SOURCES}. The "
+            f"vocabulary is simforge-closed-loop's run manifest "
+            f"(tools/run_manifest.py:TRAFFIC_SOURCES), copied verbatim so the "
+            f"two documents describing one run use one word for one thing."
+        )
+    raise ValueError(
+        f"scene {data.get('scene_id')!r} declares no traffic. It says what "
+        f"was ON THE ROAD - the clip's recorded actors replayed "
+        f"('clip_replay'), deliberately not replayed "
+        f"('clip_replay_suppressed'), or a scene package's own actors "
+        f"('scripted') - and the bridge checks a suppressed scene against "
+        f"the actors it is actually asked to spawn, so omitting the field "
+        f"does not relax that check, it skips it. It is also the scene's "
+        f"half of the run manifest's `traffic` field: a run that does not "
+        f"say is one whose road can only be established by counting actors "
+        f"in its log, where an empty road and actors lost to a defect look "
+        f"the same. Add one of {TRAFFIC_SOURCES}."
+    )
+
+
 def manifest_from_yaml(text: str) -> SceneManifest:
     data = yaml.safe_load(text)
     anchor = data.get("local_to_world") or {}
@@ -240,6 +338,7 @@ def manifest_from_yaml(text: str) -> SceneManifest:
         blueprint_overrides=dict(data.get("blueprint_overrides") or {}),
         description=data.get("description", ""),
         carla_version=_require_carla_version(data),
+        traffic=_require_traffic(data),
     )
     for cam in data.get("cameras", []):
         spec = _spec_from_yaml(cam["intrinsics"])
@@ -289,6 +388,11 @@ def manifest_from_asl(
     serves exactly the rig the runtime saw); the actor table comes from
     rollout_metadata.actor_definitions (the only place AlpaSim states bbox
     dims and labels).
+
+    ``traffic`` is ``clip_replay``: the actors in the generated table are the
+    recording's own, and a manifest generated from a log describes the run
+    that log came from. Suppression is a decision about a LATER run, so
+    whoever makes it edits the field - the way scenes/belmont did.
     """
     log = read_sensorsim_log(asl_path)
     if log.rollout_metadata is None:
@@ -299,6 +403,7 @@ def manifest_from_asl(
         anchor_translation=anchor_translation,
         anchor_yaw_deg=anchor_yaw_deg,
         description=f"Generated from {asl_path}",
+        traffic="clip_replay",
     )
     if log.available_cameras_return is not None:
         for cam in log.available_cameras_return.available_cameras:

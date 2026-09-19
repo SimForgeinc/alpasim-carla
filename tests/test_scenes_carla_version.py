@@ -38,7 +38,12 @@ def test_an_empty_carla_version_is_refused_too():
 
 def test_carla_version_round_trips_through_yaml():
     original = SceneManifest(
-        scene_id="s", carla_map="Town10HD_Opt", carla_version="0.10.0"
+        scene_id="s",
+        carla_map="Town10HD_Opt",
+        carla_version="0.10.0",
+        # Required on disk too, since this round trip goes through a file's
+        # worth of YAML; see tests/test_scenes_traffic.py.
+        traffic="clip_replay",
     )
     assert manifest_from_yaml(manifest_to_yaml(original)).carla_version == "0.10.0"
 
@@ -62,5 +67,6 @@ def test_a_manifest_without_the_field_omits_it_and_cannot_be_read_back():
 def test_the_field_is_read_from_hand_written_yaml():
     manifest = manifest_from_yaml(
         "scene_id: s\ncarla_map: Munich_Belmont\ncarla_version: '0.10.0'\n"
+        "traffic: clip_replay\n"
     )
     assert manifest.carla_version == "0.10.0"

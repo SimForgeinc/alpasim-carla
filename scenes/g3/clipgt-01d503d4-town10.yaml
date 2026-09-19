@@ -6,6 +6,13 @@ carla_map: Town10HD_Opt
 # Stage C actually loads while all three scenes/examples/ manifests, which
 # only the bridge's own render tests use, declared theirs.
 carla_version: "0.9.16"
+traffic: clip_replay
+# The rehearsal carried the clip's own recorded actors as traffic, which is
+# what `clip_replay` means in simforge-closed-loop's run manifest
+# (tools/run_manifest.py:TRAFFIC_SOURCES) and what it means here. The Belmont
+# manifest says `clip_replay_suppressed`: same clip, same actor table, a run
+# that contains none of it. The two words are the only thing that
+# distinguishes those runs afterwards.
 description: 'G3 closed-loop scene: OSS scene clipgt-01d503d4 (runtime-side session
   data comes from AlpaSim scene catalog) rendered in CARLA Town10HD_Opt; recorded
   ego start anchored onto a road spawn point.'

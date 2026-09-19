@@ -25,7 +25,7 @@ from alpasim_carla.catalog import (
     BlueprintUnavailable,
     default_catalog,
 )
-from alpasim_carla.scenes import ActorDef, SceneManifest
+from alpasim_carla.scenes import ActorDef, SceneManifest, TrafficContradiction
 
 logger = logging.getLogger("alpasim_carla.registry")
 
@@ -288,7 +288,35 @@ class ActorRegistry:
         return managed
 
     def sync(self, dynamic_objects) -> None:
-        """Reconcile the CARLA world with the request's dynamic_objects."""
+        """Reconcile the CARLA world with the request's dynamic_objects.
+
+        A scene declaring ``traffic: clip_replay_suppressed`` is held to it
+        here. This is the only process that sees what was actually on the
+        road: the run manifest's ``traffic`` field is derived from the
+        experiment config, so it records the INTENT to suppress, and if the
+        suppression does not take effect - patch 0004 unapplied, a config
+        key that moved - both records still say ``suppressed`` while the
+        clip's 62 vehicles are spawned behind them. Refusing on the first
+        request costs one rollout; not refusing costs a campaign, which is
+        the arithmetic the 2026-09-19 Belmont seeds settled.
+
+        Only that direction is checked. An EMPTY request against a scene
+        declaring ``clip_replay`` is not an error: actors legitimately come
+        and go within a rollout, so "no actors this frame" says nothing.
+        """
+        if self._scene.traffic == "clip_replay_suppressed" and dynamic_objects:
+            raise TrafficContradiction(
+                f"scene {self._scene.scene_id!r} declares "
+                f"traffic: clip_replay_suppressed, but this request carries "
+                f"{len(dynamic_objects)} dynamic object(s). The suppression "
+                f"did not take effect, so the run would contain the clip's "
+                f"replayed traffic while every record of it - this manifest "
+                f"and the run manifest, which derives its `traffic` from the "
+                f"experiment config - says the road was empty. Check "
+                f"SimulationConfig.replayed_traffic on the runtime side, or "
+                f"correct the manifest's traffic: field to what this run "
+                f"actually contains."
+            )
         requested = {}
         for obj in dynamic_objects:
             requested[obj.track_id] = frames.grpc_pose_to_tuple(obj.pose_pair.start_pose)

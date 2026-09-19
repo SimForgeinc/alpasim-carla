@@ -38,8 +38,12 @@ day-one probe found and what it did not is in
 read it before the next 0.10 run, because two of its findings change how this
 repository behaves: `static.prop.box*` does not exist on 0.10 (hence
 `fallback_blueprint:` in the listing, ADR-BRIDGE-001), and
-`tools/list_blueprints.py` currently records zero dimensions on 0.10, which is
-a known deferred bug noted at its measuring loop.
+`tools/list_blueprints.py` recorded zero dimensions on 0.10 — which was
+deferred, and then rendered every NPC of the Belmont Gate C campaign as the
+same ambulance. It is fixed, and a dimension is now measured or the listing is
+refused (ADR-BRIDGE-002). **Both listings must be regenerated and their
+`blueprint_catalog_digest` re-recorded; the listings generated before
+2026-09-19 no longer load.**
 
 ## How it works
 
@@ -221,12 +225,12 @@ a wizard flag, wiring the runtime to the bridge's address via
 | `src/alpasim_carla/registry.py` | Track-id → CARLA actor registry, the bridge's only cross-call state. Unseen id → spawn, known id → teleport, absent id → despawn. Blueprint choice from the scene's actor table (label + bbox dims), degrading to the terminal prop the listing records — objects are never dropped. |
 | `src/alpasim_carla/frames.py` | Pure coordinate math between AlpaSim (right-handed ENU, quaternions) and Unreal (left-handed, degrees), including camera optical-frame handling. No CARLA or gRPC imports; fully unit-tested. |
 | `src/alpasim_carla/cameras.py` | Maps `CameraSpec` intrinsics to CARLA's pinhole camera. Non-pinhole models (ftheta, fisheye, distortion, rolling shutter) fail explicitly unless `--allow-pinhole-approximation` is set. |
-| `src/alpasim_carla/scenes.py` + `scenes/` | Scene manifests (YAML): `scene_id` → CARLA map, camera rig served by `get_available_cameras`, actor table, world anchor. `scenes/examples/` has ready-made scenes on stock towns; `scenes/g3/` and `scenes/belmont/` are two anchorings of one clip - the same `scene_id` on Town10 (0.9.16, the rehearsal) and on Belmont (0.10.0, Gate C) - chosen by which one the bridge is pointed at. |
+| `src/alpasim_carla/scenes.py` + `scenes/` | Scene manifests (YAML): `scene_id` → CARLA map, camera rig served by `get_available_cameras`, actor table, world anchor, and `traffic:` - what was on the road, in `simforge-closed-loop`'s run-manifest vocabulary (`clip_replay`, `clip_replay_suppressed`, `scripted`). The actor table says what the clip HAD; `traffic:` says what the run CONTAINED, and a scene declaring `clip_replay_suppressed` is refused at render time if the request carries actors. `scenes/examples/` has ready-made scenes on stock towns; `scenes/g3/` and `scenes/belmont/` are two anchorings of one clip - the same `scene_id` on Town10 (0.9.16, the rehearsal) and on Belmont (0.10.0, Gate C) - chosen by which one the bridge is pointed at. |
 | `src/alpasim_carla/aslio.py` | Reader for AlpaSim `.asl` rollout logs (length-prefixed protobuf), used by the replay tools. |
 | `src/alpasim_carla/_proto/`, `proto/` | The pinned AlpaSim protos (vendored, Apache-2.0, attribution in `proto/README.md`) and generated stubs. |
 | `configs_pkg/` | `alpasim-carla-configs`: a pure-YAML package registering an `alpasim.configs` entry point, which makes `renderer=carla` a flag for AlpaSim's wizard. This is the only thing that touches AlpaSim's environment. |
 | `tools/` | `replay_contract.py` (replay recorded traffic against the servicer, no CARLA), `replay_render.py` (same, real rendering + checks), `validate_rollout.py` (closed-loop run validation + video), `record_scene.py` (record CARLA drives into test fixtures), `gen_protos.sh`. |
-| `docs/adr/` | Bridge-local decisions. `ADR-BRIDGE-001`: the ladder's terminal fallback is a per-image recorded fact. The `ADR-0NN` sequence belongs to `simforge-closed-loop`. |
+| `docs/adr/` | Bridge-local decisions. `ADR-BRIDGE-001`: the ladder's terminal fallback is a per-image recorded fact. `ADR-BRIDGE-002`: a blueprint dimension is measured or the listing is refused - it is never zero. The `ADR-0NN` sequence belongs to `simforge-closed-loop`. |
 | `docs/CONTRACT.md` | Per-RPC contract: every field consumed/produced, units, coordinate frames. PRs that change behavior must change it. |
 | `evidence/` | Artifacts from the validation gates (G0–G4): replay reports, render metrics, closed-loop summaries, transcripts. |
 
@@ -296,6 +300,13 @@ The exact validated end-to-end commands and their artifacts are in `PLAN.md`
   is opt-in.
 - Unmappable object category → documented box-prop fallback plus a structured
   warning; never a silent skip.
+- Traffic in a request against a scene declaring `traffic:
+  clip_replay_suppressed` → refused. The manifest says the run contains none
+  of the clip's actors; if they arrive anyway, the suppression did not take
+  effect and every record of the run would still claim an empty road.
+- A blueprint listing carrying an unmeasured or zero vehicle dimension →
+  refused at load, naming the rows and the regeneration command
+  (ADR-BRIDGE-002).
 - `render_lidar` → `UNIMPLEMENTED` (out of scope for v0.1).
 
 ## Scope and roadmap
@@ -326,7 +337,7 @@ alpasim-carla serve --backend carla --carla-port 3000 \
     --blueprint-catalog blueprints_0.10.txt ...
 ```
 
-Three behaviours changed:
+Four behaviours changed:
 
 - **The terminal fallback is recorded in the listing, not compiled into the
   ladder.** `tools/list_blueprints.py` writes
@@ -360,6 +371,21 @@ Three behaviours changed:
   trailing `_Opt`. The previous `current.endswith(scene.carla_map)` accepted
   a manifest name that was merely a suffix of the server's map, so a manifest
   saying `Belmont` silently matched a server serving `Munich_Belmont`.
+
+- **A dimension is measured or the listing is refused; there is no zero.**
+  `tools/list_blueprints.py` spawned every blueprint at the same point, and
+  `try_spawn_actor` returns `None` when that point is occupied — which the
+  tool wrote as `0.00`. On the 0.10 Belmont image that produced 144 of 145
+  rows at zero, so the ladder's nearest-dimensions rung returned the one
+  measured row for every actor: the Gate C campaign of 2026-09-19 rendered
+  all **462 NPC spawn decisions** as `vehicle.ambulance.ford`, and an 8.39 m
+  trailer was judged as a box the driver saw as a 6.36 m ambulance. The tool
+  now stages each blueprint on its own slot and writes `unmeasured` rather
+  than a number it does not have, and `catalog.py` refuses any listing
+  carrying an unmeasured or zero vehicle row. See
+  `docs/adr/ADR-BRIDGE-002-a-dimension-is-measured-or-refused.md`. **Every
+  listing generated before this change is refused at load — regenerate per
+  image and record the new digest.**
 
 Gate G2 now audits the ladder before a rollout: `audit_scene_blueprints`
 resolves every actor whose label is a vehicle, pedestrian or two-wheeler

@@ -23,13 +23,29 @@ Listing format - tab-separated rows, ``#`` comments ignored except for the
     # fallback_blueprint: static.prop.box03
     # id	category	length	width	height
     vehicle.lincoln.mkz	vehicle	4.90	2.13	1.51
-    walker.pedestrian.0001	walker	0.0	0.0	0.0
-    static.prop.box03	prop	0.0	0.0	0.0
+    vehicle.ue4.audi.tt	vehicle	unmeasured
+    walker.pedestrian.0001	walker
+    static.prop.box03	prop
 
 Categories are ``vehicle``, ``two_wheeler``, ``walker`` and ``prop``. Sizes are
 length/width/height in meters, measured from a spawned actor's bounding box;
 only vehicles and two-wheelers use them (nearest-dims selection ignores
-height).
+height), so only those rows carry numbers. Walker and prop rows carry none -
+they used to be written as ``0.0	0.0	0.0``, which put a column of
+zeros in the file that meant "not applicable" beside a column of zeros that
+meant "the measurement failed".
+
+**A dimension is measured or the listing is refused; there is no zero.**
+A vehicle or two-wheeler row that says ``unmeasured``, or carries ``0.00`` in
+any of its three columns, is refused at load by name - see
+:func:`parse_catalog` and
+``docs/adr/ADR-BRIDGE-002-a-dimension-is-measured-or-refused.md``. A zero
+row is not a small error: it is indistinguishable from a measurement to
+every reader downstream, and ``_nearest_by_dims`` will happily return the
+one row that DOES have extents for every actor in the scene. That is not
+hypothetical - the Belmont Gate C campaign of 2026-09-19 ran a listing with
+144 of 145 rows at zero and rendered all 462 NPC spawn decisions as
+``vehicle.ambulance.ford``, the only measured row.
 
 ``fallback_blueprint:`` names the terminal fallback - the blueprint an actor
 the ladder cannot otherwise place degrades to. It is **read**, never chosen
@@ -63,6 +79,19 @@ Candidate = Tuple[str, Dims]
 #: that blueprint does not exist (``static.prop.box*`` returns zero
 #: blueprints), so the ladder silently meant something different per server.
 FALLBACK_FIELD = "fallback_blueprint"
+
+#: What a measured column says when the measurement did not happen. Written
+#: by ``tools/list_blueprints.py`` in place of a number, and refused here.
+#: The token exists so the generator has something honest to write: a tool
+#: that cannot measure a blueprint must still be able to record that the
+#: blueprint EXISTS on this server, and the old way of doing that - writing
+#: ``0.00`` - is the defect this token replaces.
+UNMEASURED = "unmeasured"
+
+#: The categories whose dimensions the ladder actually compares. A zero in a
+#: walker or prop row is not a claim about anything; a zero in one of these
+#: is a claim that decides which vehicle the scene gets.
+MEASURED_CATEGORIES = ("vehicle", "two_wheeler")
 
 
 def _regenerate(source: str) -> str:
@@ -106,13 +135,28 @@ class BlueprintCatalog:
 
 
 def parse_catalog(text: str, source: str = "<string>") -> BlueprintCatalog:
-    """Parse a blueprint listing. Raises on a catalogue that cannot serve."""
+    """Parse a blueprint listing. Raises on a catalogue that cannot serve.
+
+    "Cannot serve" includes a listing that parses perfectly and lies: a
+    vehicle row with no measurement in it is refused here, so a
+    ``BlueprintCatalog`` that exists has real extents on every candidate the
+    nearest-dims rung will compare. That invariant is the reason the check
+    lives in the reader as well as in the generator - every listing written
+    before 2026-09-19 is a file full of zeros that is still on disk and
+    still parses.
+    """
     vehicles: List[Candidate] = []
     two_wheelers: List[Candidate] = []
     walkers: List[str] = []
     props: List[str] = []
     available: Set[str] = set()
     declared = ""
+    #: (lineno, blueprint_id, what the row said) for every measured row that
+    #: does not carry a measurement. Collected rather than raised on sight:
+    #: the remedy is to regenerate the whole listing, so the reader says how
+    #: many rows are wrong rather than making the operator find them one at a
+    #: time - 144 of them, last time.
+    unmeasured: List[Tuple[int, str, str]] = []
 
     for lineno, line in enumerate(text.splitlines(), start=1):
         stripped = line.strip()
@@ -137,11 +181,15 @@ def parse_catalog(text: str, source: str = "<string>") -> BlueprintCatalog:
         blueprint_id, category = parts[0].strip(), parts[1].strip()
         available.add(blueprint_id)
 
-        if category in ("vehicle", "two_wheeler"):
+        if category in MEASURED_CATEGORIES:
+            if len(parts) >= 3 and parts[2].strip() == UNMEASURED:
+                unmeasured.append((lineno, blueprint_id, UNMEASURED))
+                continue
             if len(parts) < 5:
                 raise ValueError(
                     f"{source} line {lineno}: {category} rows need "
-                    f"id/category/length/width/height, got {stripped!r}"
+                    f"id/category/length/width/height or "
+                    f"id/category/{UNMEASURED}, got {stripped!r}"
                 )
             try:
                 dims = (float(parts[2]), float(parts[3]), float(parts[4]))
@@ -150,6 +198,19 @@ def parse_catalog(text: str, source: str = "<string>") -> BlueprintCatalog:
                     f"{source} line {lineno}: non-numeric dimensions in "
                     f"{stripped!r}"
                 ) from exc
+            # A zero is refused here and not merely warned about, because
+            # nothing downstream can tell it from a measurement: it is a
+            # float in the column a float belongs in, and the nearest-dims
+            # rung compares it without complaint.
+            if min(dims) <= 0.0:
+                unmeasured.append(
+                    (
+                        lineno,
+                        blueprint_id,
+                        " x ".join(f"{value:.2f}" for value in dims),
+                    )
+                )
+                continue
             (vehicles if category == "vehicle" else two_wheelers).append(
                 (blueprint_id, dims)
             )
@@ -162,6 +223,32 @@ def parse_catalog(text: str, source: str = "<string>") -> BlueprintCatalog:
                 f"{source} line {lineno}: unknown category {category!r} "
                 f"(expected vehicle, two_wheeler, walker or prop)"
             )
+
+    # Checked before the emptiness checks below: a listing whose vehicle rows
+    # are ALL unmeasured has no vehicle candidates either, and "lists no
+    # vehicle blueprint" would send the reader looking for a missing row
+    # rather than at the measurement that failed.
+    if unmeasured:
+        shown = ", ".join(
+            f"{blueprint_id} (line {lineno}: {what})"
+            for lineno, blueprint_id, what in unmeasured[:3]
+        )
+        more = "" if len(unmeasured) <= 3 else f", and {len(unmeasured) - 3} more"
+        raise BlueprintUnavailable(
+            f"{source} carries {len(unmeasured)} vehicle/two_wheeler row(s) "
+            f"with no measurement: {shown}{more}. The ladder's "
+            f"nearest-dimensions rung compares against these numbers, and a "
+            f"zero is not a small one - it is indistinguishable from a "
+            f"measurement, so the rung returns whichever row DOES have "
+            f"extents for every actor in the scene. The Belmont Gate C "
+            f"campaign of 2026-09-19 ran a listing with 144 of 145 rows at "
+            f"zero and rendered all 462 NPC spawn decisions as "
+            f"vehicle.ambulance.ford, the one measured row; an 8.39 m "
+            f"trailer was drawn as a 6.36 m ambulance, so the geometry that "
+            f"was judged was not the geometry that was perceived. This is "
+            f"refused rather than warned about for that reason. "
+            + _regenerate(source)
+        )
 
     for missing, what in (
         (not vehicles, "vehicle blueprint; the ladder cannot place a car-like actor"),

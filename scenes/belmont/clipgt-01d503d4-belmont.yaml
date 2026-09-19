@@ -29,6 +29,28 @@ carla_version: "0.10.0"
 # version needs no override, so no launcher should carry one. The environment
 # variable stays supported in tests/test_carla_acceptance.py as a documented
 # escape hatch; what is retired is our use of it.
+traffic: clip_replay_suppressed
+# What the RUN contains, which after 2026-09-19 is a different question from
+# what the clip has. The `actors:` table at the foot of this file still
+# carries the clip's 62 vehicles and their sizes - that is what the clip HAD,
+# and the ladder needs it whenever the traffic is back. This field says the
+# rerun contains none of them: SimulationConfig.replayed_traffic: disabled
+# (simforge-closed-loop patches/0004) empties traffic_objects outright, so
+# the camera event's dynamic_objects arrives empty and the log's actor poses
+# carry EGO alone.
+#
+# The word is simforge-closed-loop's run manifest vocabulary verbatim
+# (tools/run_manifest.py:TRAFFIC_SOURCES), so the two documents describing
+# this run use one word for one thing. G3 says `clip_replay`: the 0.9.16
+# rehearsal carried the clip's traffic.
+#
+# ActorRegistry.sync() holds this scene to the claim and refuses a request
+# that carries dynamic objects. That is not defensive decoration. The run
+# manifest derives its `traffic` from the experiment config, so it records
+# the INTENT to suppress; if the suppression does not take effect, every
+# record still says the road was empty while the clip's vehicles drive
+# through the campaign. The previous campaign was contaminated exactly that
+# quietly - see the catalog note above.
 description: 'Stage C Belmont scene: OSS clip clipgt-01d503d4 (runtime-side
   session data comes from the AlpaSim scene catalog - per D4 a NuRec clip)
   rendered in CARLA Belmont_Office_Park_Belmont_CA on the 0.10 image; the
@@ -50,12 +72,18 @@ description: 'Stage C Belmont scene: OSS clip clipgt-01d503d4 (runtime-side
 #     exists on the server it listed - on this image that came out
 #     `static.prop.advertisement`. It is never named in a manifest and never
 #     a constant in code, so `blueprint_overrides` below stays empty.
-#   * The 0.10 listing has no dimensions: 144 of 145 rows measured 0.00,
-#     because the measuring loop loses its actor after the first spawn on this
-#     image. The nearest-dims rung therefore has nothing to compare against
-#     until that bridge-side defect is fixed. The actor table at the foot of
-#     this file carries the clip's own sizes and is unaffected; it is the
-#     server-side listing that is dimensionless.
+#   * The 0.10 listing generated on 2026-09-19 had no dimensions: 144 of 145
+#     rows measured 0.00, because tools/list_blueprints.py spawned every
+#     blueprint at the same point and wrote the blocked spawns as zeros. The
+#     nearest-dims rung then returned the one measured row -
+#     vehicle.ambulance.ford - for every actor, and the Gate C campaign ran
+#     with 462 identical ambulances on the road. Fixed per
+#     ADR-BRIDGE-002: a dimension is measured or the listing is refused.
+#     THE LISTING FOR THIS IMAGE MUST BE REGENERATED before the rerun and
+#     its blueprint_catalog_digest re-recorded; the old one is now refused at
+#     load by name. The actor table at the foot of this file carries the
+#     clip's own sizes and was never affected; it was the server-side listing
+#     that was dimensionless.
 #   * `reload_world()` RAISES on this image, every time
 #     (RuntimeError: std::exception), and the server survives it. A reload
 #     between rollouts must be load_world("Belmont_Office_Park_Belmont_CA"),

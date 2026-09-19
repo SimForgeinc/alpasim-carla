@@ -1,6 +1,12 @@
 scene_id: carla-town10-downtown
 carla_map: Town10HD_Opt
 carla_version: '0.9.16'
+traffic: scripted
+# An authored render fixture with no recording behind it: there is no clip to
+# replay and no clip to suppress, so the actors a request carries are the
+# caller's own. `scripted` is simforge-closed-loop's word for traffic that
+# came from a scene package rather than from a recording
+# (tools/run_manifest.py:TRAFFIC_SOURCES).
 description: Dense downtown block of CARLA's default city town.
 local_to_world:
   translation:

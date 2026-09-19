@@ -1,6 +1,12 @@
 scene_id: carla-town05-junctions
 carla_map: Town05
 carla_version: '0.9.16'
+traffic: scripted
+# An authored render fixture with no recording behind it: there is no clip to
+# replay and no clip to suppress, so the actors a request carries are the
+# caller's own. `scripted` is simforge-closed-loop's word for traffic that
+# came from a scene package rather than from a recording
+# (tools/run_manifest.py:TRAFFIC_SOURCES).
 description: Grid town with multi-lane junctions.
 local_to_world:
   translation:

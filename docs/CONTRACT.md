@@ -54,6 +54,14 @@ Consumed:
   the listing declares in its `fallback_blueprint:` field (recorded per
   image, never a code default — ADR-BRIDGE-001) + a structured warning;
   objects are never silently dropped.
+  A **non-empty** `dynamic_objects` against a scene manifest declaring
+  `traffic: clip_replay_suppressed` is refused: the run would contain the
+  clip's replayed traffic while every record of it — that manifest, and
+  `simforge-closed-loop`'s run manifest, which derives `traffic` from the
+  experiment config — says the road was empty. This is the one traffic claim
+  the bridge can falsify by observation, since it is the only process that
+  sees the actors arrive. An empty request against any other value is not an
+  error: actors legitimately come and go within a rollout.
 * `image_format` — PNG(1) and JPEG(2) supported (matching AlpaSim's own
   support note in the proto); anything else → **INVALID_ARGUMENT**.
   `image_quality` — JPEG quality (real traffic uses 95).

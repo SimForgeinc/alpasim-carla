@@ -8,11 +8,18 @@ eight vehicle ids exist verbatim, both two-wheeler categories were removed,
 and several survivors carry a ``vehicle.ue4.<make>.<model>`` id.
 
 Dimensions are not available from a blueprint - only a spawned actor has a
-bounding box - so each vehicle is spawned once at altitude, measured and
-destroyed. Walkers and props are listed without dimensions; the ladder does
-not use dims for them. (On 0.10 the measuring loop is known to return zeros
-after the first vehicle - see :func:`measure`. Deferred by ruling, not
-missed.)
+bounding box - so each vehicle is spawned at altitude, measured while it is
+alive, and destroyed. Walkers and props are listed without dimensions; the
+ladder does not use dims for them.
+
+A vehicle this tool cannot measure is written as ``unmeasured``, never as
+``0.00``, and a listing containing one is refused by ``catalog.py`` at load.
+That is the whole point of :func:`measure` returning ``None``: the previous
+version returned ``(0.0, 0.0, 0.0)`` for a spawn that never happened, which
+is a lie in the shape of a measurement, and it cost the Belmont Gate C
+campaign of 2026-09-19 - 462 NPC spawn decisions, every one of them
+``vehicle.ambulance.ford``. See
+docs/adr/ADR-BRIDGE-002-a-dimension-is-measured-or-refused.md.
 
 This tool also decides, and RECORDS, the terminal fallback: the blueprint an
 actor the ladder cannot otherwise place degrades to. It is written into the
@@ -46,7 +53,9 @@ from __future__ import annotations
 
 import argparse
 import sys
-from typing import List, Tuple
+from typing import List, Optional, Tuple
+
+Dims = Tuple[float, float, float]
 
 
 #: The tool's preference when the server has it, and nothing more. It is a
@@ -57,6 +66,17 @@ from typing import List, Tuple
 #: id order is recorded instead - which is how
 #: `fallback=static.prop.advertisement` came out of this tool on Belmont.
 PREFERRED_FALLBACK = "static.prop.box03"
+
+#: What a measured column says when the measurement did not happen, and the
+#: categories that have measured columns at all. Spelled here rather than
+#: imported from ``alpasim_carla.catalog``: this script runs as
+#: ``python tools/list_blueprints.py`` against a CARLA-flavoured interpreter
+#: that may not have the package on its path, which is why ``src`` is only
+#: put on ``sys.path`` at the end of :func:`main`. The two spellings are
+#: pinned equal in tests/test_blueprint_dimensions.py, which is a cheaper
+#: seam than an import that can fail on the box this has to run on.
+UNMEASURED = "unmeasured"
+MEASURED_CATEGORIES = ("vehicle", "two_wheeler")
 
 
 def choose_fallback(props: List[str]) -> str:
@@ -99,57 +119,156 @@ def categorize(blueprint) -> str:
     return ""
 
 
-def measure(world, carla, blueprint) -> Tuple[float, float, float]:
-    """Spawn at altitude, read the bounding box, destroy. (0,0,0) on failure.
+def staging_transform(carla, slot: int):
+    """A spawn point no other blueprint in this run has used.
 
-    KNOWN BROKEN ON CARLA 0.10 - DEFERRED BY RULING, NOT MISSED.
+    The same grid ``ActorRegistry._spawn`` stages on, for the same reason
+    and with the numbers copied deliberately: 400 m is above any stock-town
+    structure and 15 m apart is wider than the longest vehicle, so two
+    consecutive blueprints cannot collide with each other.
 
-    Symptom, measured on the Belmont image on 2026-09-19: the generated
-    listing had **144 of 145 rows reading length 0.00**. Only
-    ``vehicle.ambulance.ford``, the first vehicle spawned, carried real
-    extents (6.36 x 2.35 x 2.43). The run also printed
+    The registry already knew that one fixed spawn point does not work.
+    This tool used ``(0, 0, 500)`` for every blueprint in the library.
+    """
+    return carla.Transform(
+        carla.Location(
+            x=float((slot % 40) * 15.0),
+            y=-float(((slot // 40) % 40) * 15.0),
+            z=400.0,
+        )
+    )
+
+
+def settle(world) -> None:
+    """Let the server register the actor before its bounding box is read.
+
+    ``bounding_box`` is served out of the client-side actor snapshot, which
+    is refreshed on a world tick. Reading it in the same breath as the spawn
+    can return the pre-registration default, which is a zeroed box - and a
+    zeroed box read off a live actor is exactly the failure this file exists
+    to make impossible, so it is worth one tick to avoid.
+
+    In synchronous mode nobody here owns the tick, so waiting would hang
+    until the timeout; this tool runs against an asynchronous world (the
+    only place it ticks is :func:`probe_attach`, which restores the
+    setting).
+    """
+    try:
+        if world.get_settings().synchronous_mode:
+            return
+        world.wait_for_tick()
+    except (AttributeError, RuntimeError):
+        pass
+
+
+def measure(world, carla, blueprint, slot: int = 0) -> Optional[Dims]:
+    """Spawn at altitude, read the box off the LIVE actor, destroy.
+
+    Returns ``None`` - never a zero - when the blueprint could not be
+    measured. ``None`` is written into the listing as ``unmeasured`` and the
+    listing is then refused at load, which is the one behaviour this
+    function's caller must not be able to lose.
+
+    WHAT WENT WRONG ON BELMONT, AND WHAT IT ACTUALLY WAS
+
+    Measured on the Belmont image, 2026-09-19: the generated listing had
+    **144 of 145 rows reading 0.00**, and only ``vehicle.ambulance.ford``
+    carried real extents (6.36 x 2.35 x 2.43). The run also printed
 
         WARNING: attempting to destroy an actor that is already dead:
                  Actor 81 (vehicle.ambulance.ford)
 
-    Likely cause: the dimensions are read after the actor is already gone.
-    ``bounding_box`` is a property on a client-side actor handle, and on
-    0.10 that handle appears not to survive the spawn/destroy cycle this
-    function runs per blueprint, so every subsequent read returns a
-    zeroed box rather than raising. The `finally` destroy firing on an
-    actor the server already reaped is the same symptom from the other
-    side.
+    The hypothesis recorded here was that the extents were read after the
+    actor was gone. **They were not.** The read sat inside the ``try``,
+    above the ``finally`` that destroyed - the actor was alive at every
+    read. The cause the code actually supports is one line further up:
+    every blueprint in the library was spawned at the SAME transform,
+    ``(0, 0, 500)``, with a single attempt, and ``try_spawn_actor`` returns
+    ``None`` rather than raising when that point is occupied. That ``None``
+    was converted to ``(0.0, 0.0, 0.0)`` and written as a measurement.
 
-    What a catalog of zeros affects:
-      * G2's nearest-dimensions rung - every candidate is (0,0,0), so the
-        "nearest" vehicle is whichever one sorts first, not the one that
-        fits;
-      * the blueprint audit, which resolves gated actors through that same
-        rung.
-    What it does NOT affect:
-      * the AABB collision cross-check in simforge-closed-loop, which reads
-        extents from the rollout log and never opens the catalog;
-      * Belmont Gate C, whose Stage C scene declares ``traffic: none``, so
-        no NPC is ever chosen or audited.
+    It fits what was observed, which the old hypothesis did not:
+    ``vehicle.ambulance.ford`` sorts first among ``vehicle.*``, so it is the
+    one that got the free spawn point; the "already dead" warning names it
+    alone, and says its destroy did not land where the client thought it
+    did, leaving the point occupied for the 144 blueprints behind it. One
+    actor that spawned, one actor warned about, 144 that never spawned at
+    all.
 
-    Deferred deliberately (Dib, 2026-09-19): it does not gate the Gate C
-    seeds, and it MUST be fixed before any Stage B scene package, where
-    NPCs exist and both readers above matter.
+    So the fix is three things, and only the first is the spawn:
+
+      * a staging slot per blueprint, with the registry's retry ladder, so
+        an actor the server has not reaped yet cannot block its successor;
+      * the box read off an actor asserted alive, after one tick;
+      * and a failure that is a refusal rather than a zero, because the
+        first two are a hypothesis about a server this cannot reach and the
+        third is not. If the spawn fix is wrong, the listing says
+        ``unmeasured`` 145 times and nothing will load it. If the old code
+        was wrong, it said ``0.00`` 144 times and everything loaded it.
     """
-    transform = carla.Transform(carla.Location(x=0.0, y=0.0, z=500.0))
-    actor = world.try_spawn_actor(blueprint, transform)
+    transform = staging_transform(carla, slot)
+    actor = None
+    for _ in range(4):
+        actor = world.try_spawn_actor(blueprint, transform)
+        if actor is not None:
+            break
+        transform.location.z += 75.0
+        transform.location.x += 7.5
     if actor is None:
-        return (0.0, 0.0, 0.0)
+        return None
+
+    dims: Optional[Dims] = None
     try:
+        try:
+            # Nothing here is driven; a falling actor is one more way for a
+            # spawn point to still be occupied when the next blueprint wants
+            # it. The registry disables physics for the same reason.
+            actor.set_simulate_physics(False)
+        except (AttributeError, RuntimeError):
+            pass
+        settle(world)
+        if not getattr(actor, "is_alive", True):
+            return None
         extent = actor.bounding_box.extent
-        return (2 * extent.x, 2 * extent.y, 2 * extent.z)
+        dims = (2 * extent.x, 2 * extent.y, 2 * extent.z)
     except (AttributeError, RuntimeError):
-        return (0.0, 0.0, 0.0)
+        return None
     finally:
         try:
             actor.destroy()
         except RuntimeError:
             pass
+
+    if min(dims) <= 0.0:
+        # A live actor reporting a flat box. Whatever that is, it is not a
+        # vehicle 0 m long, and it must not reach the file as one. Height is
+        # included even though the ladder ignores it: a zero anywhere in the
+        # box says the read was wrong, not that the vehicle is thin.
+        return None
+    return dims
+
+
+def format_row(blueprint_id: str, category: str, dims: Optional[Dims]) -> str:
+    """One listing row, and the place a zero cannot get through.
+
+    Only ``vehicle`` and ``two_wheeler`` rows carry numbers, because they
+    are the only rows whose numbers anything reads. Walker and prop rows
+    used to be written ``0.00	0.00	0.00``; dropping those columns is
+    what lets the invariant be stated without an exception in it - **no
+    ``0.00`` appears anywhere in a listing this function writes.**
+
+    The zero guard is on the FORMATTED string rather than on the float,
+    because 0.004 m is not a vehicle either and ``f"{0.004:.2f}"`` is
+    ``0.00``. What must never appear in the file is what is checked.
+    """
+    if category not in MEASURED_CATEGORIES:
+        return f"{blueprint_id}\t{category}"
+    if dims is None:
+        return f"{blueprint_id}\t{category}\t{UNMEASURED}"
+    formatted = [f"{value:.2f}" for value in dims]
+    if "0.00" in formatted:
+        return f"{blueprint_id}\t{category}\t{UNMEASURED}"
+    return f"{blueprint_id}\t{category}\t" + "\t".join(formatted)
 
 
 def probe_attach(world, carla, say) -> None:
@@ -280,8 +399,10 @@ def main(argv: List[str] | None = None) -> int:
     parser.add_argument(
         "--no-measure",
         action="store_true",
-        help="skip spawning vehicles to measure dimensions (writes zeros, "
-        "which makes nearest-dims selection meaningless)",
+        help="skip spawning vehicles to measure dimensions. Every vehicle "
+        "row is then written 'unmeasured' and the listing is REFUSED at "
+        "load: it can answer 'which blueprint ids does this server have', "
+        "which is the day-one question, but it cannot serve the ladder.",
     )
     args = parser.parse_args(argv)
 
@@ -298,21 +419,44 @@ def main(argv: List[str] | None = None) -> int:
     library = world.get_blueprint_library()
     rows: List[str] = []
     props: List[str] = []
-    # The measuring loop. Its dimensions are zero for all but the first
-    # vehicle on CARLA 0.10 - see measure() for the symptom, the cause and
-    # why the fix is deferred rather than missing.
+    unmeasured: List[str] = []
+    measurable = 0
+    slot = 0
+    # The measuring loop. Each vehicle gets its own staging slot and its own
+    # verdict: a measurement, or `unmeasured`. There is no third outcome and
+    # in particular there is no zero - see measure().
     for blueprint in sorted(library, key=lambda b: b.id):
         category = categorize(blueprint)
         if not category:
             continue
         if category == "prop":
             props.append(blueprint.id)
-        if category in ("vehicle", "two_wheeler") and not args.no_measure:
-            length, width, height = measure(world, carla, blueprint)
-        else:
-            length, width, height = (0.0, 0.0, 0.0)
-        rows.append(
-            f"{blueprint.id}\t{category}\t{length:.2f}\t{width:.2f}\t{height:.2f}"
+        dims = None
+        if category in MEASURED_CATEGORIES:
+            measurable += 1
+            if not args.no_measure:
+                dims = measure(world, carla, blueprint, slot)
+                slot += 1
+        row = format_row(blueprint.id, category, dims)
+        if category in MEASURED_CATEGORIES and row.endswith(UNMEASURED):
+            unmeasured.append(blueprint.id)
+        rows.append(row)
+
+    if unmeasured:
+        print(
+            f"{len(unmeasured)} of {measurable} vehicle/two_wheeler "
+            f"blueprint(s) could not be "
+            f"measured on this server and are written as {UNMEASURED!r}: "
+            f"{', '.join(unmeasured)}",
+            file=sys.stderr,
+        )
+        print(
+            "The listing will be refused at load. That is deliberate: a "
+            "blueprint with no extents cannot be compared by the ladder's "
+            "nearest-dimensions rung, and writing 0.00 instead is what "
+            "rendered every NPC of the Belmont Gate C campaign as the same "
+            "ambulance.",
+            file=sys.stderr,
         )
 
     # The terminal fallback is recorded, not defaulted, and it is only
@@ -335,7 +479,10 @@ def main(argv: List[str] | None = None) -> int:
     ]
     if fallback:
         header.append(f"# fallback_blueprint: {fallback}")
-    header.append("# id\tcategory\tlength\twidth\theight")
+    header.append(
+        "# id\tcategory\tlength\twidth\theight  (vehicles and two-wheelers "
+        "only; 'unmeasured' where the measurement failed, never 0.00)"
+    )
     with open(args.out, "w", encoding="utf-8") as handle:
         handle.write("\n".join(header + rows) + "\n")
 
@@ -354,7 +501,9 @@ def main(argv: List[str] | None = None) -> int:
         f"wrote {args.out}: {len(catalog.vehicles)} vehicles, "
         f"{len(catalog.two_wheelers)} two-wheelers, walker={catalog.walker}, "
         f"fallback_blueprint={catalog.fallback_prop} (verified on this "
-        f"server and recorded in the listing)"
+        f"server and recorded in the listing). Every vehicle and two-wheeler "
+        f"candidate carries measured extents - the load above is what "
+        f"establishes that, since it refuses the listing otherwise."
     )
     return 0
 
